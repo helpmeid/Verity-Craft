@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verity Craft</title>
+    <link rel="icon" type="image/png" href="assets/download-removebg-preview.png">
+    <!-- Include PeerJS library for Chromebook Peer-to-Peer connectivity -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg-color: #f2f5f3;
+            --text-color: #202a26;
+            --surface: #ffffff;
+            --surface-muted: #e5ece8;
+            --border-color: #c8d2cc;
+            --accent: #176b55;
+            --accent-hover: #10513f;
+            --accent-text: #ffffff;
+            --background-art: repeating-linear-gradient(135deg, rgba(23,107,85,.06) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(23,107,85,.14), transparent 48%, rgba(10,55,42,.11));
+        }
+        body[data-palette="classic"] {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --surface: #ffffff;
+            --surface-muted: #f1f1f1;
+            --border-color: #000000;
+            --accent: #000000;
+            --accent-hover: #292929;
+            --accent-text: #ffffff;
+            --button-muted-bg: #000000;
+            --button-muted-text: #ffffff;
+            --button-muted-border: #000000;
+            --background-art: repeating-linear-gradient(135deg, rgba(0,0,0,.045) 0 1px, transparent 1px 30px), linear-gradient(118deg, rgba(0,0,0,.035), transparent 50%, rgba(0,0,0,.05));
+        }
+        body[data-palette="ocean"] {
+            --bg-color: #d9efff;
+            --text-color: #163344;
+            --surface: #f5fbff;
+            --surface-muted: #c8e5f5;
+            --border-color: #a9ccdf;
+            --accent: #176a8a;
+            --accent-hover: #10516d;
+            --accent-text: #ffffff;
+            --background-art: repeating-linear-gradient(135deg, rgba(23,106,138,.07) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(52,151,204,.16), transparent 48%, rgba(18,103,145,.12));
+        }
+        body[data-palette="ember"] {
+            --bg-color: #f8f2ed;
+            --text-color: #33251f;
+            --surface: #ffffff;
+            --surface-muted: #efe3da;
+            --border-color: #d9c4b6;
+            --accent: #a64e2e;
+            --accent-hover: #813a21;
+            --accent-text: #ffffff;
+            --background-art: repeating-linear-gradient(135deg, rgba(166,78,46,.065) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(211,128,79,.14), transparent 48%, rgba(131,58,33,.1));
+        }
+        body[data-palette="rose"] {
+            --bg-color: #f8e7ed;
+            --text-color: #38212b;
+            --surface: #fff9fb;
+            --surface-muted: #efd6df;
+            --border-color: #d7b4c1;
+            --accent: #a83d65;
+            --accent-hover: #84304f;
+            --accent-text: #ffffff;
+            --background-art: repeating-linear-gradient(135deg, rgba(168,61,101,.065) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(212,111,148,.15), transparent 48%, rgba(132,48,79,.1));
+        }
+        body[data-palette="lavender"] {
+            --bg-color: #eeeafa;
+            --text-color: #2e2940;
+            --surface: #fbfaff;
+            --surface-muted: #ded8ef;
+            --border-color: #c2b9dc;
+            --accent: #65558f;
+            --accent-hover: #4c406d;
+            --accent-text: #ffffff;
+            --background-art: repeating-linear-gradient(135deg, rgba(101,85,143,.065) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(140,120,190,.15), transparent 48%, rgba(76,64,109,.1));
+        }
+        body[data-palette="golden"] {
+            --bg-color: #fff2cc;
+            --text-color: #382d16;
+            --surface: #fffdf6;
+            --surface-muted: #f2e4b7;
+            --border-color: #d9c88d;
+            --accent: #826214;
+            --accent-hover: #62490e;
+            --accent-text: #ffffff;
+            --background-art: repeating-linear-gradient(135deg, rgba(130,98,20,.065) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(197,157,48,.15), transparent 48%, rgba(98,73,14,.1));
+        }
+        body[data-palette="ice"] {
+            --bg-color: #e4f6f3;
+            --text-color: #19332f;
+            --surface: #f8fffd;
+            --surface-muted: #cce9e4;
+            --border-color: #acd2ca;
+            --accent: #267466;
+            --accent-hover: #1b594f;
+            --accent-text: #ffffff;
+            --background-art: repeating-linear-gradient(135deg, rgba(38,116,102,.065) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(79,170,151,.15), transparent 48%, rgba(27,89,79,.1));
+        }
+        body[data-palette="verity-secret"] {
+            --bg-color: #f6d84b;
+            --text-color: #090909;
+            --surface: #fff7cf;
+            --surface-muted: #f0d96f;
+            --border-color: #090909;
+            --accent: #090909;
+            --accent-hover: #303030;
+            --accent-text: #ffdf32;
+            --button-muted-bg: #090909;
+            --button-muted-text: #ffdf32;
+            --button-muted-border: #090909;
+            --background-art: repeating-linear-gradient(135deg, rgba(0,0,0,.045) 0 1px, transparent 1px 42px), linear-gradient(125deg, rgba(255,255,255,.35), transparent 58%, rgba(0,0,0,.035));
+        }
+        body[data-theme="dark"] {
+            color-scheme: dark;
+        }
+        body[data-palette="classic"][data-theme="dark"] {
+            --bg-color: #000000;
+            --text-color: #ffffff;
+            --surface: #111111;
+            --surface-muted: #222222;
+            --border-color: #ffffff;
+            --accent: #ffffff;
+            --accent-hover: #dedede;
+            --accent-text: #000000;
+            --button-muted-bg: #ffffff;
+            --button-muted-text: #000000;
+            --button-muted-border: #ffffff;
+            --background-art: repeating-linear-gradient(135deg, rgba(255,255,255,.07) 0 1px, transparent 1px 30px), linear-gradient(118deg, rgba(255,255,255,.05), transparent 50%, rgba(255,255,255,.08));
+        }
+        body[data-palette="verdant"][data-theme="dark"] {
+            --bg-color: #081b14;
+            --text-color: #e0f3e8;
+            --surface: #10251c;
+            --surface-muted: #193329;
+            --border-color: #385847;
+            --accent: #3d9b70;
+            --accent-hover: #57b789;
+            --background-art: repeating-linear-gradient(135deg, rgba(61,155,112,.11) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(61,155,112,.16), transparent 48%, rgba(8,50,34,.2));
+        }
+        body[data-palette="ocean"][data-theme="dark"] {
+            --bg-color: #061b2e;
+            --text-color: #e3f3ff;
+            --surface: #0d2b45;
+            --surface-muted: #123b5a;
+            --border-color: #315a75;
+            --accent: #398fc4;
+            --accent-hover: #55a7d8;
+            --background-art: repeating-linear-gradient(135deg, rgba(57,143,196,.12) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(57,143,196,.17), transparent 48%, rgba(6,43,72,.25));
+        }
+        body[data-palette="ember"][data-theme="dark"] {
+            --bg-color: #241008;
+            --text-color: #fbe9dc;
+            --surface: #35190e;
+            --surface-muted: #4a2316;
+            --border-color: #76412c;
+            --accent: #c86a3f;
+            --accent-hover: #e08458;
+            --background-art: repeating-linear-gradient(135deg, rgba(200,106,63,.12) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(200,106,63,.17), transparent 48%, rgba(55,25,14,.25));
+        }
+        body[data-palette="rose"][data-theme="dark"] {
+            --bg-color: #250b16;
+            --text-color: #ffe8f0;
+            --surface: #341320;
+            --surface-muted: #491a2c;
+            --border-color: #71364e;
+            --accent: #ce5f83;
+            --accent-hover: #e17a9d;
+            --background-art: repeating-linear-gradient(135deg, rgba(206,95,131,.12) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(206,95,131,.17), transparent 48%, rgba(52,19,32,.25));
+        }
+        body[data-palette="lavender"][data-theme="dark"] {
+            --bg-color: #17112d;
+            --text-color: #eee9ff;
+            --surface: #211a3a;
+            --surface-muted: #2f2550;
+            --border-color: #514476;
+            --accent: #8975c9;
+            --accent-hover: #a08cde;
+            --background-art: repeating-linear-gradient(135deg, rgba(137,117,201,.12) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(137,117,201,.17), transparent 48%, rgba(33,26,58,.25));
+        }
+        body[data-palette="golden"][data-theme="dark"] {
+            --bg-color: #211802;
+            --text-color: #fff4d3;
+            --surface: #332608;
+            --surface-muted: #49360d;
+            --border-color: #75602b;
+            --accent: #bc9635;
+            --accent-hover: #d7b553;
+            --background-art: repeating-linear-gradient(135deg, rgba(188,150,53,.12) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(188,150,53,.17), transparent 48%, rgba(51,38,8,.25));
+        }
+        body[data-palette="ice"][data-theme="dark"] {
+            --bg-color: #071d20;
+            --text-color: #e4faf7;
+            --surface: #102c30;
+            --surface-muted: #193d42;
+            --border-color: #386369;
+            --accent: #48a598;
+            --accent-hover: #63bdaf;
+            --background-art: repeating-linear-gradient(135deg, rgba(72,165,152,.12) 0 1px, transparent 1px 26px), linear-gradient(118deg, rgba(72,165,152,.17), transparent 48%, rgba(16,44,48,.25));
+        }
+        body {
+            font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 72px 20px 20px;
+            min-height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            isolation: isolate;
+            transition: background-color 160ms ease, color 160ms ease;
+        }
+        body::before, body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+        body::before {
+            background-image: var(--background-art);
+            background-size: 180px 180px, 210% 210%;
+            background-position: 0 0, 0% 50%;
+            opacity: .9;
+            animation: ambient-drift 24s linear infinite;
+        }
+        body::after { content: none; }
+        body[data-palette="verity-secret"]::after {
+            content: "";
+            inset: 0;
+            background: url("assets/download-removebg-preview.png") no-repeat right 8% center;
+            background-size: clamp(200px, 32vw, 340px) auto;
+            opacity: .28;
+            animation: character-float 5s ease-in-out infinite alternate;
+        }
+        .screen { position: relative; z-index: 1; display: none; width: 100%; max-width: 500px; text-align: center; }
+        .active { display: block; }
+
+        button, input, select {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button { background-color: var(--accent); color: var(--accent-text, #fff); border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: var(--accent-hover, var(--accent)); }
+        button:hover { opacity: 0.9; }
+        button:disabled { cursor: not-allowed; opacity: 0.55; }
+        .secondary-button { background: var(--button-muted-bg, var(--surface-muted)); color: var(--button-muted-text, var(--text-color)); border: 1px solid var(--button-muted-border, var(--border-color)); }
+        .global-settings-button { position: fixed; top: 12px; right: 12px; width: auto; min-width: 104px; margin: 0; z-index: 20; }
+        .host-code-bar { position: fixed; top: 12px; left: 12px; z-index: 20; display: flex; align-items: center; gap: 8px; width: auto; padding: 4px 8px; background: var(--surface); border: 1px solid var(--border-color); border-radius: 8px; }
+        .host-code-bar[hidden] { display: none; }
+        .host-code-bar button { width: auto; margin: 0; padding: 8px 10px; }
+        .request-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .join-request-panel { position: fixed; top: 76px; left: 50%; z-index: 20000; width: min(380px, calc(100vw - 32px)); padding: 18px; transform: translateX(-50%); color: var(--text-color); background: var(--surface); border: 2px solid var(--accent); border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.4); text-align: center; }
+        .join-request-panel[hidden] { display: none; }
+        .menu-heading { display: flex; align-items: center; justify-content: center; gap: 14px; }
+        .mascot-button { display: grid; width: auto; min-width: 0; margin: 0; padding: 0; place-items: center; background: transparent; color: inherit; border: 0; user-select: none; -webkit-user-select: none; }
+        .mascot-button:hover { background: transparent; opacity: 1; }
+        .mascot-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+        .brand-button { width: auto; margin: 0; padding: 4px; background: transparent; color: var(--text-color); border: 0; font: inherit; font-size: 2em; font-weight: 700; text-align: left; user-select: none; }
+        .brand-button:hover { background: transparent; opacity: 1; }
+        .brand-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+        .verity-mascot { width: 76px; height: 76px; flex: 0 0 auto; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; animation: mascot-bob 3s ease-in-out infinite; }
+        .screen-back { margin-bottom: 12px; }
+        .player-name-field { text-align: left; margin: 18px 0; }
+        .player-name-field input { margin-top: 6px; }
+        .card-checkbox { display: flex; align-items: center; gap: 10px; margin: 0; padding: 8px; text-align: left; }
+        .card-checkbox input, .settings-toggle input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+        .card-checkbox label { flex: 1; }
+        .card-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 10px; max-height: 300px; overflow-y: auto; padding: 6px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface); }
+        .card-pool-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        .card-pool-actions button { padding: 10px 6px; font-size: 14px; }
+        #host-settings { background: var(--surface-muted); padding: 15px; border-radius: 8px; margin-top: 20px; text-align: left; }
+        #host-settings h3, #host-settings > p { text-align: center; }
+        #game-board { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 800px; }
+        .game-columns { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 16px; align-items: start; }
+        .game-main { min-width: 0; }
+        .discard-panel { padding: 12px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; text-align: left; }
+        .discard-panel h3 { margin-top: 0; }
+        #discard-pile { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+        .discarded-card { padding: 6px 8px; background: var(--surface); border: 1px solid var(--border-color); border-radius: 6px; overflow-wrap: anywhere; }
+        .hand { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+        .card {
+            width: 100px;
+            height: 140px;
+            background: var(--surface);
+            border: 2px solid var(--text-color);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.12);
+            transition: transform 0.2s;
+            animation: card-deal 420ms ease-out both;
+        }
+        .card-verity { width: 74px; height: 74px; object-fit: contain; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+        .guess-controls { display: grid; gap: 8px; padding: 14px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; text-align: left; }
+        .guess-controls[hidden] { display: none; }
+        .guess-controls button { margin-top: 4px; }
+        .click-particle, .particle-preview-dot { width: var(--particle-size, 7px); height: var(--particle-size, 7px); border-radius: 50%; background: var(--particle-color, var(--accent)); }
+        .click-particle { position: fixed; z-index: 99; pointer-events: none; animation: particle-burst var(--particle-duration, 520ms) ease-out forwards; }
+        .click-particle[data-shape="ring"], .particle-preview-dot[data-shape="ring"] { background: transparent; border: 2px solid var(--particle-color, var(--accent)); }
+        .click-particle[data-shape="square"], .particle-preview-dot[data-shape="square"] { border-radius: 1px; }
+        .click-particle[data-shape="diamond"], .particle-preview-dot[data-shape="diamond"] { border-radius: 0; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+        .click-particle[data-shape="star"], .particle-preview-dot[data-shape="star"] { border-radius: 0; clip-path: polygon(50% 0, 62% 35%, 100% 38%, 70% 60%, 80% 100%, 50% 76%, 20% 100%, 30% 60%, 0 38%, 38% 35%); }
+        .cursor-glow { position: fixed; z-index: 10001; top: 0; left: 0; width: var(--cursor-size, 18px); height: var(--cursor-size, 18px); border: 2px solid var(--cursor-color, var(--accent)); border-radius: 50%; box-shadow: 0 0 10px var(--cursor-color, var(--accent)); opacity: 0; pointer-events: none; transform: translate3d(-100px, -100px, 0); }
+        .cursor-glow[data-shape="dot"] { background: var(--cursor-color, var(--accent)); border: 0; box-shadow: 0 0 8px var(--cursor-color, var(--accent)); }
+        .cursor-glow[data-shape="square"] { border-radius: 3px; }
+        .cursor-glow[data-shape="diamond"] { border-radius: 0; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+        .cursor-glow[data-shape="star"] { border-radius: 0; clip-path: polygon(50% 0, 62% 35%, 100% 38%, 70% 60%, 80% 100%, 50% 76%, 20% 100%, 30% 60%, 0 38%, 38% 35%); }
+        .effect-preview-stage { position: relative; display: grid; min-height: 116px; margin: 10px 0 16px; place-items: center; overflow: hidden; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface-muted); }
+        .effect-cursor-preview { position: relative; top: auto; left: auto; opacity: 1; transform: none !important; }
+        .particle-preview-dot { position: absolute; left: 50%; top: 50%; }
+        .settings-panel[hidden] { display: none; }
+        .settings-panel { max-height: min(680px, calc(100dvh - 80px)); overflow-y: auto; }
+        .settings-panel input[type="range"] { accent-color: var(--accent); padding: 0; }
+        body, body * { cursor: none !important; }
+        .status-box { background: var(--surface-muted); padding: 10px; border-radius: 8px; font-weight: bold; }
+        #display-lobby-id { overflow-wrap: anywhere; background: var(--surface); padding: 10px; border-radius: 8px; }
+        dialog { width: min(420px, calc(100% - 40px)); max-height: calc(100vh - 40px); overflow: visible; color: var(--text-color); background: var(--surface); border: 1px solid var(--border-color); border-radius: 8px; padding: 22px; }
+        dialog::backdrop { background: rgba(10, 20, 15, 0.62); }
+        .settings-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 0; text-align: left; }
+        .network-note { padding: 12px; background: var(--surface-muted); border-radius: 8px; line-height: 1.5; text-align: left; }
+        #guest-lobby-settings { max-height: 230px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+        @keyframes ambient-drift {
+            from { background-position: 0 0, 0% 50%; }
+            to { background-position: 180px 180px, 100% 100%; }
+        }
+        @keyframes character-drift {
+            from { background-position: 0 0; }
+            to { background-position: 96px 0; }
+        }
+        @keyframes character-float {
+            from { transform: translateY(-7px); }
+            to { transform: translateY(7px); }
+        }
+        @keyframes mascot-bob {
+            0%, 100% { transform: translateY(0) rotate(-3deg); }
+            50% { transform: translateY(-9px) rotate(3deg); }
+        }
+        @keyframes card-deal {
+            from { opacity: 0; transform: translateY(16px) scale(.96); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes particle-burst {
+            from { opacity: .95; transform: translate(-50%, -50%) scale(1); }
+            to { opacity: 0; transform: translate(calc(-50% + var(--particle-x)), calc(-50% + var(--particle-y))) scale(.15); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            body::before, body[data-palette="verity-secret"]::after, .verity-mascot, .card, .click-particle { animation: none; }
+        }
+        @media (max-width: 420px) {
+            body { padding: 68px 14px 14px; }
+            .game-columns { grid-template-columns: 1fr; }
+            #discard-pile { max-height: 180px; }
+            .card-options { grid-template-columns: 1fr; }
+            .card { width: 82px; height: 118px; }
+        }
+    </style>
+</head>
+<body>
+
+    <span id="cursor-glow" class="cursor-glow" aria-hidden="true"></span>
+    <div id="host-code-bar" class="host-code-bar" hidden>
+        <span>Lobby code: <strong id="host-lobby-code"></strong></span>
+        <button class="secondary-button" type="button" onclick="copyLobbyCode()">Copy</button>
+    </div>
+    <button class="secondary-button global-settings-button" type="button" onclick="openSettings()">Settings</button>
+
+    <!-- SCREEN 1: MAIN MENU -->
+    <div id="menu-screen" class="screen active">
+        <div class="menu-heading">
+            <button class="mascot-button" type="button" aria-label="Verity character" onclick="handleBrandClick()">
+                <img id="verity-logo" class="verity-mascot" src="assets/download-removebg-preview.png" alt="" draggable="false">
+            </button>
+            <button id="brand-title" class="brand-button" type="button" onclick="handleBrandClick()">Verity Craft</button>
+        </div>
+        <label class="player-name-field" for="player-name">Your name
+            <input id="player-name" type="text" maxlength="20" autocomplete="nickname" placeholder="Enter a name" oninput="savePlayerName(this.value)">
+        </label>
+        <button onclick="createLobby()">Create Host Lobby</button>
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ccc;">
+        <input type="text" id="join-id-input" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="Enter 5-character lobby code" oninput="formatLobbyCode(this)">
+        <button onclick="joinLobby()">Join Lobby</button>
+    </div>
+
+    <dialog id="settings-dialog" aria-labelledby="settings-title">
+        <section id="settings-main-panel" class="settings-panel">
+            <h2 id="settings-title">Settings</h2>
+            <label class="player-name-field" for="settings-player-name">Your name
+                <input id="settings-player-name" type="text" maxlength="20" autocomplete="nickname" placeholder="Enter a name" oninput="savePlayerName(this.value)">
+            </label>
+            <label class="settings-toggle" for="dark-mode-toggle">
+                <input id="dark-mode-toggle" type="checkbox" onchange="setDarkMode(this.checked)">
+                <span>Dark mode</span>
+            </label>
+            <label for="color-theme-select">Color theme</label>
+            <select id="color-theme-select" onchange="setColorTheme(this.value)">
+                <option value="verity-secret" hidden>Verity</option>
+                <option value="classic">Classic</option>
+                <option value="verdant">Verdant</option>
+                <option value="ocean">Ocean</option>
+                <option value="ember">Ember</option>
+                <option value="rose">Rose</option>
+                <option value="lavender">Lavender</option>
+                <option value="golden">Golden</option>
+                <option value="ice">Ice</option>
+            </select>
+            <button type="button" onclick="showSettingsPanel('cursor-settings-panel')">Cursor Settings</button>
+            <button type="button" onclick="showSettingsPanel('particle-settings-panel')">Particle Settings</button>
+            <p class="network-note">School Wi-Fi may restrict peer-to-peer connections. If the lobby reports a network error, use a school-approved network or ask your network administrator whether this game is allowed.</p>
+            <button class="secondary-button" type="button" onclick="closeSettings()">Close</button>
+        </section>
+        <section id="cursor-settings-panel" class="settings-panel" hidden>
+            <button class="secondary-button" type="button" onclick="showSettingsPanel('settings-main-panel')">Back to Settings</button>
+            <h2>Cursor Settings</h2>
+            <label for="cursor-size-range">Size: <output id="cursor-size-value">18 px</output></label>
+            <input id="cursor-size-range" type="range" min="10" max="40" step="2" value="18" oninput="updateEffectPreviews()">
+            <label for="cursor-shape-select">Shape</label>
+            <select id="cursor-shape-select" onchange="updateEffectPreviews()">
+                <option value="ring">Ring</option>
+                <option value="dot">Dot</option>
+                <option value="square">Square</option>
+                <option value="diamond">Diamond</option>
+                <option value="star">Star</option>
+            </select>
+            <label for="cursor-color-select">Color</label>
+            <select id="cursor-color-select" onchange="updateEffectPreviews()">
+                <option value="theme">Match theme</option>
+                <option value="yellow">Sunshine</option>
+                <option value="cyan">Cyan</option>
+                <option value="pink">Pink</option>
+                <option value="green">Lime</option>
+                <option value="orange">Orange</option>
+                <option value="purple">Violet</option>
+                <option value="white">White</option>
+            </select>
+            <div class="effect-preview-stage" aria-label="Cursor preview"><span id="cursor-preview" class="cursor-glow effect-cursor-preview" data-shape="ring"></span></div>
+            <button type="button" onclick="saveEffectSettings('cursor')">Apply Cursor Settings</button>
+        </section>
+        <section id="particle-settings-panel" class="settings-panel" hidden>
+            <button class="secondary-button" type="button" onclick="showSettingsPanel('settings-main-panel')">Back to Settings</button>
+            <h2>Particle Settings</h2>
+            <label for="particle-size-range">Size: <output id="particle-size-value">7 px</output></label>
+            <input id="particle-size-range" type="range" min="4" max="18" step="2" value="7" oninput="updateEffectPreviews()">
+            <label for="particle-count-range">Particles per click: <output id="particle-count-value">8</output></label>
+            <input id="particle-count-range" type="range" min="4" max="20" step="4" value="8" oninput="updateEffectPreviews()">
+            <label for="particle-duration-range">Particle speed: <output id="particle-speed-value">Normal</output></label>
+            <input id="particle-duration-range" type="range" min="300" max="1000" step="100" value="500" oninput="updateEffectPreviews()">
+            <label for="particle-shape-select">Shape</label>
+            <select id="particle-shape-select" onchange="updateEffectPreviews()">
+                <option value="dot">Dot</option>
+                <option value="ring">Ring</option>
+                <option value="square">Square</option>
+                <option value="diamond">Diamond</option>
+                <option value="star">Star</option>
+            </select>
+            <label for="particle-color-select">Color</label>
+            <select id="particle-color-select" onchange="updateEffectPreviews()">
+                <option value="theme">Match theme</option>
+                <option value="yellow">Sunshine</option>
+                <option value="cyan">Cyan</option>
+                <option value="pink">Pink</option>
+                <option value="green">Lime</option>
+                <option value="orange">Orange</option>
+                <option value="purple">Violet</option>
+                <option value="white">White</option>
+                <option value="black">Black</option>
+            </select>
+            <div id="particle-preview-stage" class="effect-preview-stage" aria-label="Particle burst preview"></div>
+            <button type="button" onclick="saveEffectSettings('particle')">Apply Particle Settings</button>
+        </section>
+    </dialog>
+
+    <section id="join-request-panel" class="join-request-panel" role="alertdialog" aria-modal="true" aria-labelledby="join-request-title" hidden>
+        <h2 id="join-request-title">Join request</h2>
+        <p id="join-request-message">A player wants to join your round.</p>
+        <div class="request-actions">
+            <button type="button" onclick="answerJoinRequest(true)">Allow</button>
+            <button class="secondary-button" type="button" onclick="answerJoinRequest(false)">Decline</button>
+        </div>
+    </section>
+
+    <!-- SCREEN 2: LOBBY & SETTINGS -->
+    <div id="lobby-screen" class="screen">
+        <button class="secondary-button screen-back" type="button" onclick="returnToMenu()">Back to menu</button>
+        <h2>Lobby Room</h2>
+        <p>Share this ID with your friend:</p>
+        <h3 id="display-lobby-id">-</h3>
+        <p id="lobby-player-names"></p>
+        <p id="lobby-status">Waiting for player to join...</p>
+        <div id="guest-lobby-settings" class="status-box" hidden>Waiting for host settings...</div>
+
+        <!-- Host Only Settings -->
+        <div id="host-settings" style="display: none;">
+            <h3>Match Settings</h3>
+            <label for="card-count">Cards per player:</label>
+            <select id="card-count" onchange="sendLobbySettings()">
+                <option value="3">3 Cards</option>
+                <option value="5" selected>5 Cards</option>
+                <option value="7">7 Cards</option>
+            </select>
+            <p><strong>Card pool</strong></p>
+            <div class="card-pool-actions">
+                <button class="secondary-button" type="button" onclick="selectCardOptions('all')">All cards</button>
+                <button class="secondary-button" type="button" onclick="selectCardOptions('verity')">Verity family</button>
+                <button class="secondary-button" type="button" onclick="selectCardOptions('none')">Clear</button>
+            </div>
+            <div id="card-options" class="card-options" aria-label="Available card types" onchange="sendLobbySettings()"></div>
+            <button id="start-game-button" onclick="startGame()" style="margin-top: 15px;" disabled>Waiting for player</button>
+        </div>
+    </div>
+
+    <!-- SCREEN 3: GAMEPLAY -->
+    <div id="game-screen" class="screen">
+        <button class="secondary-button screen-back" type="button" onclick="returnToMenu()">Back to menu</button>
+        <div id="game-board">
+            <p id="game-player-names"></p>
+            <div class="status-box" id="turn-status">Game Started!</div>
+            <div class="game-columns">
+                <div class="game-main">
+            <div id="arena" style="height: 110px; display: flex; justify-content: center; align-items: center; border: 2px dashed var(--border-color); border-radius: 8px; padding: 8px;">
+                <p id="arena-text">Played cards will appear here</p>
+            </div>
+            <div id="guess-controls" class="guess-controls" hidden>
+                <label for="guess-target">Choose a player</label>
+                <select id="guess-target" onchange="updateGuessCountOptions()"></select>
+                <label for="guess-card">Guess a card</label>
+                <select id="guess-card"></select>
+                <label for="guess-count">How many do they have?</label>
+                <input id="guess-count" type="number" min="1" max="0" step="1" inputmode="numeric" placeholder="Type a number" disabled>
+                <button id="submit-guess-button" type="button" onclick="submitGuess()">Make Guess</button>
+            </div>
+            <h3>Your Hand</h3>
+            <div id="my-hand" class="hand"></div>
+                </div>
+                <aside class="discard-panel" aria-labelledby="discard-title">
+                    <h3 id="discard-title">Your discard pile <span id="discard-count">0</span></h3>
+                    <div id="discard-pile" aria-live="polite"></div>
+                </aside>
+            </div>
+        </div>
+    </div>
+
+    <!-- Link the game multiplayer logic file -->
+    <script src="game.js"></script>
+</body>
+</html>
