@@ -14,6 +14,13 @@ let currentTurnPlayerId = 'host';
 let gamePlayerId = 'host';
 let gameMessage = '';
 let winnerId = null;
+let eliminationOrder = [];
+let gameResults = [];
+let roundId = '';
+let returnToMenuTimer = null;
+let gameFinished = false;
+let coinBalance = 0;
+let rewardedRoundIds = new Set();
 let pendingJoinRequests = [];
 let currentJoinRequest = null;
 let brandTapCount = 0;
@@ -97,6 +104,7 @@ const EFFECT_COLORS = {
     white: '#ffffff',
     black: '#111111'
 };
+const END_GAME_RETURN_DELAY = 8000;
 let activeEffectSettings = { ...EFFECT_DEFAULTS };
 
 function openSettings() {
@@ -118,6 +126,26 @@ function showSettingsPanel(panelId) {
 
 function getPlayerName() {
     return document.getElementById('player-name').value.trim() || 'Player';
+}
+
+function updateCoinBalance() {
+    document.getElementById('coin-balance').innerText = String(coinBalance);
+}
+
+function awardRoundCoins(completedRoundId, result) {
+    if (!completedRoundId || !result || rewardedRoundIds.has(completedRoundId)) return;
+    rewardedRoundIds.add(completedRoundId);
+    coinBalance += result.reward;
+    if (rewardedRoundIds.size > 50) {
+        rewardedRoundIds = new Set(Array.from(rewardedRoundIds).slice(-50));
+    }
+    try {
+        localStorage.setItem('verity-craft-coins', String(coinBalance));
+        localStorage.setItem('verity-craft-rewarded-rounds', JSON.stringify(Array.from(rewardedRoundIds)));
+    } catch (error) {
+        // Coins remain available for this session if browser storage is unavailable.
+    }
+    updateCoinBalance();
 }
 
 function savePlayerName(name) {
@@ -170,6 +198,9 @@ function returnToMenu() {
     const activePeer = peer;
     peer = null;
     conn = null;
+    clearTimeout(returnToMenuTimer);
+    returnToMenuTimer = null;
+    gameFinished = false;
     isHost = false;
     myHand = [];
     gameSettings = {};
@@ -182,6 +213,9 @@ function returnToMenu() {
     gamePlayerId = 'host';
     gameMessage = '';
     winnerId = null;
+    eliminationOrder = [];
+    gameResults = [];
+    roundId = '';
     document.getElementById('winner-overlay').hidden = true;
     pendingJoinRequests = [];
     currentJoinRequest = null;
@@ -288,15 +322,23 @@ function initializeSettings() {
     let savedPalette = 'verdant';
     let savedPlayerName = '';
     let secretThemeUnlocked = false;
+    let savedCoins = 0;
+    let savedRewardedRounds = [];
     try {
         savedTheme = localStorage.getItem('verity-craft-theme') || 'light';
         savedDarkMode = localStorage.getItem('verity-craft-dark-mode');
         savedPalette = localStorage.getItem('verity-craft-color-theme') || 'verdant';
         savedPlayerName = localStorage.getItem('verity-craft-player-name') || '';
         secretThemeUnlocked = localStorage.getItem('verity-craft-secret-unlocked') === 'true';
+        savedCoins = Number(localStorage.getItem('verity-craft-coins') || 0);
+        savedRewardedRounds = JSON.parse(localStorage.getItem('verity-craft-rewarded-rounds') || '[]');
     } catch (error) {
         // Use the default theme when browser storage is unavailable.
     }
+    coinBalance = Number.isSafeInteger(savedCoins) && savedCoins >= 0 ? savedCoins : 0;
+    rewardedRoundIds = new Set(Array.isArray(savedRewardedRounds)
+        ? savedRewardedRounds.filter((id) => typeof id === 'string')
+        : []);
     secretThemeUnlocked = secretThemeUnlocked || savedPalette === 'verity-secret';
     if (secretThemeUnlocked) {
         document.querySelector('#color-theme-select option[value="verity-secret"]').hidden = false;
@@ -309,6 +351,7 @@ function initializeSettings() {
     document.getElementById('color-theme-select').value = document.body.dataset.palette;
     document.getElementById('player-name').value = savedPlayerName;
     document.getElementById('settings-player-name').value = savedPlayerName;
+    updateCoinBalance();
     renderCardOptions();
     initializeEffectSettings();
     updatePlayerNames();
@@ -559,6 +602,7 @@ function setupConnectionHandlers(connection) {
 
     connection.on('error', showConnectionError);
     connection.on('close', () => {
+        if (gameFinished || !peer) return;
         if (hostSide) {
             hostConnections.delete(connection);
             const removedIndex = gamePlayers.findIndex((player) => player.connection === connection);
@@ -602,7 +646,10 @@ function updateHostLobbyStatus() {
 function handleHostMessage(connection, data) {
     if (data.type === 'JOIN_REQUEST') {
         const name = (data.name || 'Player').slice(0, 20);
-        if (gameStarted) {
+        if (gameFinished || winnerId) {
+            connection.send({ type: 'JOIN_REJECTED' });
+            connection.close();
+        } else if (gameStarted) {
             pendingJoinRequests.push({ connection, name });
             showNextJoinRequest();
         } else {
@@ -650,7 +697,10 @@ function handleGuestMessage(data) {
         currentTurnPlayerId = data.currentTurnId;
         gameMessage = data.message || '';
         winnerId = data.winnerId || null;
+        gameResults = data.results || [];
+        roundId = data.roundId || '';
         renderGame();
+        finishGameForLocalPlayer();
     }
 }
 
@@ -694,7 +744,9 @@ function getPublicGameState() {
         currentTurnId: gamePlayers[currentTurnIndex]?.id || 'host',
         settings: gameSettings,
         message: gameMessage,
-        winnerId
+        winnerId,
+        results: gameResults,
+        roundId
     };
 }
 
@@ -731,6 +783,9 @@ function processGuess(guesserId, targetId, cardName, guessedCount) {
     if (matchingCards.length === count) {
         target.hand = target.hand.filter((card) => card !== cardName);
         guesser.discardPile.push(...matchingCards);
+        if (target.hand.length === 0 && !eliminationOrder.includes(target.id)) {
+            eliminationOrder.push(target.id);
+        }
         gameMessage = `${guesser.name} guessed correctly. ${target.name} lost ${matchingCards.length} ${cardName} card${matchingCards.length === 1 ? '' : 's'}; they went to ${guesser.name}'s discard pile.`;
     } else {
         gameMessage = `${guesser.name} guessed ${target.name} had ${count} ${cardName} card${count === 1 ? '' : 's'}, but was wrong.`;
@@ -744,7 +799,23 @@ function advanceTurnAfter(playerId) {
     const activePlayers = gamePlayers.filter((player) => player.hand.length > 0);
     if (activePlayers.length <= 1) {
         winnerId = activePlayers[0]?.id || null;
-        if (winnerId) currentTurnIndex = gamePlayers.findIndex((player) => player.id === winnerId);
+        if (winnerId) {
+            currentTurnIndex = gamePlayers.findIndex((player) => player.id === winnerId);
+            const playerCount = gamePlayers.length;
+            const winnerReward = 100 + Math.max(0, playerCount - 2) * 25;
+            const finalOrder = [
+                winnerId,
+                ...eliminationOrder.filter((id) => id !== winnerId).reverse(),
+                ...gamePlayers.map((player) => player.id).filter((id) => id !== winnerId && !eliminationOrder.includes(id))
+            ];
+            gameResults = finalOrder.map((id, index) => {
+                const placement = index + 1;
+                const reward = placement === 1
+                    ? winnerReward
+                    : Math.max(10, Math.round(winnerReward * (playerCount - placement + 1) / (2 * playerCount)));
+                return { id, placement, reward };
+            });
+        }
         return;
     }
 
@@ -800,6 +871,12 @@ function startGame() {
     gameSettings = { cardsPerPlayer, allowedCards, allowSpectators };
     gameStarted = true;
     winnerId = null;
+    eliminationOrder = [];
+    gameResults = [];
+    roundId = typeof window.crypto?.randomUUID === 'function'
+        ? window.crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    gameFinished = false;
     myDiscardPile = [];
     gamePlayers = [{ id: 'host', name: getPlayerName(), hand: dealHand(gameSettings), discardPile: [], connection: null }];
     players.forEach(([connection, player]) => {
@@ -821,9 +898,25 @@ function renderGameState(state) {
     currentTurnPlayerId = state.currentTurnId;
     gameMessage = state.message || '';
     winnerId = state.winnerId || null;
+    gameResults = state.results || [];
+    roundId = state.roundId || '';
     myDiscardPile = state.myDiscardPile || [];
     myHand = state.hand;
     renderGame();
+    finishGameForLocalPlayer();
+}
+
+function finishGameForLocalPlayer() {
+    if (!winnerId || !gameResults.length) return;
+    gameFinished = true;
+    const localResult = gameResults.find((result) => result.id === gamePlayerId);
+    awardRoundCoins(roundId, localResult);
+    if (!returnToMenuTimer) {
+        returnToMenuTimer = window.setTimeout(
+            returnToMenu,
+            END_GAME_RETURN_DELAY
+        );
+    }
 }
 
 function updateGuessCountOptions() {
@@ -927,9 +1020,17 @@ function renderWinnerOverlay() {
     }
     const winner = gamePlayers.find((player) => player.id === winnerId);
     if (!winner) return;
-    document.getElementById('winner-title').innerText = winner.id === gamePlayerId ? 'You win!' : `${winner.name} wins!`;
-    document.getElementById('winner-message').innerText = `${winner.name} is the last player standing.`;
+    const localResult = gameResults.find((result) => result.id === gamePlayerId);
+    document.getElementById('winner-title').innerText = localResult?.placement === 1 ? 'You win!' : 'You lost';
+    document.getElementById('winner-message').innerText = localResult
+        ? `${localResult.placement}${getPlacementSuffix(localResult.placement)} place. You earned ${localResult.reward} coins. Returning to the main menu...`
+        : `${winner.name} is the last player standing. Returning to the main menu...`;
     overlay.hidden = false;
+}
+
+function getPlacementSuffix(placement) {
+    if (placement % 100 >= 11 && placement % 100 <= 13) return 'th';
+    return ({ 1: 'st', 2: 'nd', 3: 'rd' })[placement % 10] || 'th';
 }
 
 function renderDiscardPile() {
