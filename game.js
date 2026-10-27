@@ -9,11 +9,19 @@ let gameStarted = false;
 let hostConnections = new Map();
 let gamePlayers = [];
 let myDiscardPile = [];
+let unoDeck = [];
+let unoDiscardPile = [];
+let unoCurrentSuit = '';
+let unoDirection = 1;
+let unoDrawPileCount = 0;
+let unoDrawnCardId = null;
+let selectedUnoCardId = null;
 let currentTurnIndex = 0;
 let currentTurnPlayerId = 'host';
 let gamePlayerId = 'host';
 let gameMessage = '';
 let winnerId = null;
+let winnerType = '';
 let eliminationOrder = [];
 let gameResults = [];
 let roundId = '';
@@ -23,6 +31,7 @@ let coinBalance = 0;
 let rewardedRoundIds = new Set();
 let pendingJoinRequests = [];
 let currentJoinRequest = null;
+let wasKicked = false;
 let brandTapCount = 0;
 let brandTapTimeout = null;
 const CARD_OPTIONS = [
@@ -33,25 +42,16 @@ const CARD_OPTIONS = [
     'Curiosity',
     'Clarity',
     'Sincerity',
-    'Serenity',
     'Velocity',
-    'Gravity',
     'Infinity',
     'Duality',
     'Reality',
-    'Mystery',
-    'Empathy',
-    'Loyalty',
     'Audacity',
     'Sanity',
     'Absurdity',
     'Creativity',
-    'Resilience',
-    'Humility',
     'Eternity',
-    'Lucidity',
     'Spookity',
-    'Dreamity',
     'Glitchity',
     'Riftity',
     'Jollity',
@@ -61,6 +61,18 @@ const CARD_OPTIONS = [
     'Cruelty'
 ];
 const VERITY_FAMILY = new Set(CARD_OPTIONS.slice(0, -3));
+const LORD_VERITY_CORNERS = [
+    { name: 'Lord Verity: Top Left', corner: 'top-left' },
+    { name: 'Lord Verity: Top Right', corner: 'top-right' },
+    { name: 'Lord Verity: Bottom Left', corner: 'bottom-left' },
+    { name: 'Lord Verity: Bottom Right', corner: 'bottom-right' }
+];
+const UNO_SUITS = ['Green', 'Blue', 'Red', 'Yellow'];
+const UNO_ACTIONS = [
+    { type: 'skip', value: 'Skipity', copies: 2 },
+    { type: 'reverse', value: 'Reversity', copies: 2 },
+    { type: 'draw-two', value: 'Drawity', copies: 2 }
+];
 const EFFECT_DEFAULTS = {
     cursorColor: 'theme',
     cursorShape: 'ring',
@@ -170,13 +182,52 @@ function updatePlayerNames() {
     document.getElementById('game-player-names').innerText = names;
 }
 
+function renderHostPlayerList(containerId) {
+    const container = document.getElementById(containerId);
+    container.hidden = !isHost;
+    container.replaceChildren();
+    if (!isHost) return;
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Manage players';
+    container.appendChild(heading);
+    const players = Array.from(hostConnections.values()).filter((player) => player.connection.open);
+    if (!players.length) {
+        const emptyState = document.createElement('p');
+        emptyState.textContent = 'No players connected.';
+        container.appendChild(emptyState);
+        return;
+    }
+
+    players.forEach((player) => {
+        const row = document.createElement('div');
+        row.className = 'host-player-row';
+        const name = document.createElement('span');
+        const gamePlayer = gamePlayers.find((candidate) => candidate.connection === player.connection);
+        name.textContent = gamePlayer?.isSpectator ? `${player.name} (spectating)` : player.name;
+        const kickButton = document.createElement('button');
+        kickButton.type = 'button';
+        kickButton.className = 'secondary-button';
+        kickButton.textContent = 'Kick';
+        kickButton.setAttribute('aria-label', `Kick ${player.name}`);
+        kickButton.addEventListener('click', () => kickPlayer(player.id, player.name));
+        row.append(name, kickButton);
+        container.appendChild(row);
+    });
+}
+
 function getLobbySettings() {
     const allowedCards = Array.from(document.querySelectorAll('#card-options input:checked'), (checkbox) => checkbox.dataset.cardName);
     return {
         cardsPerPlayer: parseInt(document.getElementById('card-count').value, 10),
         allowedCards,
-        allowSpectators: document.getElementById('allow-spectators').checked
+        allowSpectators: document.getElementById('allow-spectators').checked,
+        mode: document.getElementById('game-mode').value
     };
+}
+
+function updateHostModeSettings() {
+    document.getElementById('guess-mode-settings').hidden = document.getElementById('game-mode').value === 'unoity';
 }
 
 function sendLobbySettings() {
@@ -188,10 +239,12 @@ function sendLobbySettings() {
 }
 
 function updateGuestSettings(settings) {
-    const cardList = settings.allowedCards.length ? settings.allowedCards.join(', ') : 'None selected yet';
-    document.getElementById('guest-lobby-settings').innerText =
-        `Host settings\nCards per player: ${settings.cardsPerPlayer}\nCard pool: ${cardList}\nEliminated players: ${settings.allowSpectators ? 'can spectate' : 'cannot spectate'}`;
-    document.getElementById('guest-lobby-settings').hidden = false;
+    const modeName = settings.mode === 'unoity' ? 'Unoity' : 'Guess the Variety';
+    const guestSettings = document.getElementById('guest-lobby-settings');
+    guestSettings.innerText = settings.mode === 'unoity'
+        ? `Host settings\nMode: ${modeName}\nPlayers joining mid-game: ${settings.allowSpectators ? 'can spectate' : 'cannot join'}`
+        : `Host settings\nMode: ${modeName}\nCards per player: ${settings.cardsPerPlayer}\nCard pool: ${settings.allowedCards.length ? settings.allowedCards.join(', ') : 'None selected yet'}\nEliminated players: ${settings.allowSpectators ? 'can spectate' : 'cannot spectate'}`;
+    guestSettings.hidden = false;
 }
 
 function returnToMenu() {
@@ -208,17 +261,26 @@ function returnToMenu() {
     hostConnections.clear();
     gamePlayers = [];
     myDiscardPile = [];
+    unoDeck = [];
+    unoDiscardPile = [];
+    unoCurrentSuit = '';
+    unoDirection = 1;
+    unoDrawPileCount = 0;
+    unoDrawnCardId = null;
+    selectedUnoCardId = null;
     currentTurnIndex = 0;
     currentTurnPlayerId = 'host';
     gamePlayerId = 'host';
     gameMessage = '';
     winnerId = null;
+    winnerType = '';
     eliminationOrder = [];
     gameResults = [];
     roundId = '';
     document.getElementById('winner-overlay').hidden = true;
     pendingJoinRequests = [];
     currentJoinRequest = null;
+    wasKicked = false;
     opponentName = 'Waiting for player';
 
     if (activePeer && !activePeer.destroyed) activePeer.destroy();
@@ -226,12 +288,16 @@ function returnToMenu() {
 
     document.getElementById('host-code-bar').hidden = true;
     document.getElementById('host-settings').style.display = 'none';
+    document.getElementById('game-mode').value = 'guess-variety';
+    updateHostModeSettings();
     document.getElementById('guest-lobby-settings').hidden = true;
     document.getElementById('guest-lobby-settings').innerText = 'Waiting for host settings...';
     document.getElementById('display-lobby-id').innerText = '-';
     document.getElementById('lobby-status').innerText = 'Waiting for player to join...';
     document.getElementById('start-game-button').disabled = true;
     document.getElementById('start-game-button').innerText = 'Waiting for player';
+    renderHostPlayerList('host-lobby-players');
+    renderHostPlayerList('host-game-players');
     document.getElementById('my-hand').innerHTML = '';
     document.getElementById('arena-text').innerText = 'Played cards will appear here';
     document.getElementById('turn-status').innerText = 'Game Started!';
@@ -496,7 +562,9 @@ function showScreen(screenId) {
 // Host setup
 function createLobby() {
     isHost = true;
+    wasKicked = false;
     gameStarted = false;
+    winnerType = '';
     hostConnections.clear();
     gamePlayers = [];
     myDiscardPile = [];
@@ -535,6 +603,7 @@ function registerHostPeer(attempt = 0) {
         displayHostLobbyCode(id);
         document.getElementById('lobby-status').innerText = 'Waiting for player to join...';
         document.getElementById('host-settings').style.display = 'block';
+        updateHostModeSettings();
     });
 
     hostPeer.on('error', (error) => {
@@ -558,6 +627,7 @@ function registerHostPeer(attempt = 0) {
 // Client / Guest setup
 function joinLobby() {
     isHost = false;
+    wasKicked = false;
     const targetId = document.getElementById('join-id-input').value.trim().toUpperCase();
     if (!/^[A-Z0-9]{5}$/.test(targetId)) return alert('Enter the 5-character lobby code.');
 
@@ -604,17 +674,9 @@ function setupConnectionHandlers(connection) {
     connection.on('close', () => {
         if (gameFinished || !peer) return;
         if (hostSide) {
-            hostConnections.delete(connection);
-            const removedIndex = gamePlayers.findIndex((player) => player.connection === connection);
-            if (removedIndex >= 0) {
-                const [removedPlayer] = gamePlayers.splice(removedIndex, 1);
-                if (removedIndex < currentTurnIndex) currentTurnIndex -= 1;
-                currentTurnIndex %= gamePlayers.length;
-                broadcastGameState(`${removedPlayer.name} left the game.`);
-            } else {
-                updateHostLobbyStatus();
-            }
+            if (hostConnections.has(connection)) removeHostPlayer(connection, 'left the game.');
         } else {
+            if (wasKicked) return;
             document.getElementById('lobby-status').innerText = 'Connection closed. Check the code and rejoin the lobby.';
         }
     });
@@ -641,6 +703,8 @@ function updateHostLobbyStatus() {
             : 'Waiting for player to join...';
     }
     updatePlayerNames();
+    renderHostPlayerList('host-lobby-players');
+    renderHostPlayerList('host-game-players');
 }
 
 function handleHostMessage(connection, data) {
@@ -650,6 +714,11 @@ function handleHostMessage(connection, data) {
             connection.send({ type: 'JOIN_REJECTED' });
             connection.close();
         } else if (gameStarted) {
+            if (!gameSettings.allowSpectators) {
+                connection.send({ type: 'JOIN_REJECTED' });
+                connection.close();
+                return;
+            }
             pendingJoinRequests.push({ connection, name });
             showNextJoinRequest();
         } else {
@@ -670,6 +739,15 @@ function handleHostMessage(connection, data) {
     } else if (data.type === 'GUESS_MOVE') {
         const player = gamePlayers.find((candidate) => candidate.connection === connection);
         if (player) processGuess(player.id, data.targetId, data.cardName, data.guessedCount);
+    } else if (data.type === 'UNO_PLAY') {
+        const player = gamePlayers.find((candidate) => candidate.connection === connection);
+        if (player) processUnoPlay(player.id, data.cardId, data.suit);
+    } else if (data.type === 'UNO_DRAW') {
+        const player = gamePlayers.find((candidate) => candidate.connection === connection);
+        if (player) drawUnoCard(player.id);
+    } else if (data.type === 'UNO_PASS') {
+        const player = gamePlayers.find((candidate) => candidate.connection === connection);
+        if (player) passUnoTurn(player.id);
     }
 }
 
@@ -678,10 +756,15 @@ function handleGuestMessage(data) {
         opponentName = data.hostName || 'Lobby owner';
         updateGuestSettings(data.settings);
         document.getElementById('lobby-status').innerText = data.inGame
-            ? 'The owner accepted you. Joining the current round...'
+            ? 'The owner accepted you. Joining as a spectator...'
             : 'The owner accepted you. Waiting for the game to start...';
     } else if (data.type === 'JOIN_REJECTED') {
         document.getElementById('lobby-status').innerText = 'The lobby owner declined your request.';
+    } else if (data.type === 'KICKED') {
+        wasKicked = true;
+        gameStarted = false;
+        document.getElementById('lobby-status').innerText = 'The lobby creator removed you from the game.';
+        showScreen('lobby-screen');
     } else if (data.type === 'HOST_INFO') {
         opponentName = data.name || 'Lobby owner';
         updatePlayerNames();
@@ -692,11 +775,17 @@ function handleGuestMessage(data) {
         gameSettings = data.settings;
         myHand = data.hand;
         myDiscardPile = data.myDiscardPile || [];
+        unoDiscardPile = data.unoDiscardPile || [];
+        unoCurrentSuit = data.unoCurrentSuit || '';
+        unoDirection = data.unoDirection || 1;
+        unoDrawPileCount = data.unoDrawPileCount || 0;
+        unoDrawnCardId = data.unoDrawnCardId || null;
         gamePlayers = data.players;
         gamePlayerId = data.youId;
         currentTurnPlayerId = data.currentTurnId;
         gameMessage = data.message || '';
         winnerId = data.winnerId || null;
+        winnerType = data.winnerType || '';
         gameResults = data.results || [];
         roundId = data.roundId || '';
         renderGame();
@@ -705,21 +794,22 @@ function handleGuestMessage(data) {
 }
 
 function acceptHostPlayer(connection, name) {
-    const player = { id: connection.peer, name, hand: [], discardPile: [], connection };
+    const player = { id: connection.peer, name, hand: [], discardPile: [], connection, isSpectator: false };
     hostConnections.set(connection, player);
     const settings = gameStarted ? gameSettings : getLobbySettings();
     connection.send({
         type: 'JOIN_ACCEPTED',
         hostName: getPlayerName(),
         settings,
-        inGame: gameStarted
+        inGame: gameStarted,
+        spectating: gameStarted
     });
 
     if (gameStarted) {
-        player.hand = dealHand(gameSettings);
+        player.isSpectator = true;
         gamePlayers.push(player);
-        winnerId = null;
-        broadcastGameState(`${name} joined the round.`);
+        broadcastGameState(`${name} joined as a spectator.`);
+        renderHostPlayerList('host-game-players');
     } else {
         connection.send({ type: 'LOBBY_SETTINGS', settings });
         updateHostLobbyStatus();
@@ -735,16 +825,24 @@ function dealHand(settings) {
 
 function getPublicGameState() {
     return {
-        players: gamePlayers.map(({ id, name, hand, discardPile: playerDiscardPile }) => ({
+        players: gamePlayers.map(({ id, name, hand, discardPile: playerDiscardPile, isSpectator }) => ({
             id,
             name,
             cardCount: hand.length,
-            discardCount: playerDiscardPile.length
+            discardCount: playerDiscardPile.length,
+            isSpectator
         })),
         currentTurnId: gamePlayers[currentTurnIndex]?.id || 'host',
         settings: gameSettings,
+        unoDiscardPile,
+        unoTopCard: unoDiscardPile.at(-1) || null,
+        unoCurrentSuit,
+        unoDirection,
+        unoDrawPileCount: unoDeck.length,
+        unoDrawnCardId,
         message: gameMessage,
         winnerId,
+        winnerType,
         results: gameResults,
         roundId
     };
@@ -766,18 +864,19 @@ function broadcastGameState(message = '') {
                 type: 'GAME_STATE',
                 youId: player.id,
                 hand: player.hand,
-                myDiscardPile: player.discardPile
+                myDiscardPile: player.discardPile,
+                unoDiscardPile
             });
         }
     });
 }
 
 function processGuess(guesserId, targetId, cardName, guessedCount) {
-    if (!gameStarted || winnerId || gamePlayers[currentTurnIndex]?.id !== guesserId) return;
+    if (!gameStarted || winnerId || gameSettings.mode === 'unoity' || gamePlayers[currentTurnIndex]?.id !== guesserId) return;
     const guesser = gamePlayers.find((player) => player.id === guesserId);
     const target = gamePlayers.find((player) => player.id === targetId && player.id !== guesserId);
     const count = Number(guessedCount);
-    if (!guesser || !target || !gameSettings.allowedCards.includes(cardName) || !Number.isInteger(count) || count < 1 || count > target.hand.length) return;
+    if (!guesser || guesser.isSpectator || !target || !getGuessableCards().includes(cardName) || !Number.isInteger(count) || count < 1 || count > target.hand.length) return;
 
     const matchingCards = target.hand.filter((card) => card === cardName);
     if (matchingCards.length === count) {
@@ -787,6 +886,11 @@ function processGuess(guesserId, targetId, cardName, guessedCount) {
             eliminationOrder.push(target.id);
         }
         gameMessage = `${guesser.name} guessed correctly. ${target.name} lost ${matchingCards.length} ${cardName} card${matchingCards.length === 1 ? '' : 's'}; they went to ${guesser.name}'s discard pile.`;
+        if (hasAllLordVerityCorners(guesser)) {
+            finishRoundWithWinner(guesser, `Lord Verity! ${guesser.name} wins!`, 'lord-verity');
+            broadcastGameState();
+            return;
+        }
     } else {
         gameMessage = `${guesser.name} guessed ${target.name} had ${count} ${cardName} card${count === 1 ? '' : 's'}, but was wrong.`;
     }
@@ -796,26 +900,9 @@ function processGuess(guesserId, targetId, cardName, guessedCount) {
 }
 
 function advanceTurnAfter(playerId) {
-    const activePlayers = gamePlayers.filter((player) => player.hand.length > 0);
+    const activePlayers = gamePlayers.filter((player) => !player.isSpectator && player.hand.length > 0);
     if (activePlayers.length <= 1) {
-        winnerId = activePlayers[0]?.id || null;
-        if (winnerId) {
-            currentTurnIndex = gamePlayers.findIndex((player) => player.id === winnerId);
-            const playerCount = gamePlayers.length;
-            const winnerReward = 100 + Math.max(0, playerCount - 2) * 25;
-            const finalOrder = [
-                winnerId,
-                ...eliminationOrder.filter((id) => id !== winnerId).reverse(),
-                ...gamePlayers.map((player) => player.id).filter((id) => id !== winnerId && !eliminationOrder.includes(id))
-            ];
-            gameResults = finalOrder.map((id, index) => {
-                const placement = index + 1;
-                const reward = placement === 1
-                    ? winnerReward
-                    : Math.max(10, Math.round(winnerReward * (playerCount - placement + 1) / (2 * playerCount)));
-                return { id, placement, reward };
-            });
-        }
+        if (activePlayers[0]) finishRoundWithWinner(activePlayers[0]);
         return;
     }
 
@@ -823,11 +910,201 @@ function advanceTurnAfter(playerId) {
     const playerIndex = gamePlayers.findIndex((player) => player.id === playerId);
     for (let offset = 1; offset <= gamePlayers.length; offset += 1) {
         const nextIndex = (playerIndex + offset) % gamePlayers.length;
-        if (gamePlayers[nextIndex].hand.length > 0) {
+        if (!gamePlayers[nextIndex].isSpectator && gamePlayers[nextIndex].hand.length > 0) {
             currentTurnIndex = nextIndex;
             return;
         }
     }
+}
+
+function finishRoundWithWinner(winner, message = gameMessage, type = '') {
+    winnerId = winner.id;
+    winnerType = type;
+    currentTurnIndex = gamePlayers.findIndex((player) => player.id === winner.id);
+    gameMessage = message;
+    const players = gamePlayers.filter((player) => !player.isSpectator);
+    const playerCount = players.length;
+    const winnerReward = 100 + Math.max(0, playerCount - 2) * 25;
+    const finalOrder = [
+        winner.id,
+        ...eliminationOrder.filter((id) => id !== winner.id && players.some((player) => player.id === id)).reverse(),
+        ...players.map((player) => player.id).filter((id) => id !== winner.id && !eliminationOrder.includes(id))
+    ];
+    gameResults = finalOrder.map((id, index) => {
+        const placement = index + 1;
+        const reward = placement === 1
+            ? winnerReward
+            : Math.max(10, Math.round(winnerReward * (playerCount - placement + 1) / (2 * playerCount)));
+        return { id, placement, reward };
+    });
+}
+
+function getGuessableCards() {
+    return [...(Array.isArray(gameSettings.allowedCards) ? gameSettings.allowedCards : []), ...LORD_VERITY_CORNERS.map(({ name }) => name)];
+}
+
+function hasAllLordVerityCorners(player) {
+    const ownedCards = new Set([...player.hand, ...player.discardPile]);
+    return LORD_VERITY_CORNERS.every(({ name }) => ownedCards.has(name));
+}
+
+function dealLordVerityCorners(players) {
+    if (!players.length) return;
+    const shuffledCorners = [...LORD_VERITY_CORNERS];
+    for (let index = shuffledCorners.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [shuffledCorners[index], shuffledCorners[swapIndex]] = [shuffledCorners[swapIndex], shuffledCorners[index]];
+    }
+    shuffledCorners.forEach(({ name }, index) => {
+        players[index % players.length].hand.push(name);
+    });
+}
+
+function shuffleCards(cards) {
+    for (let index = cards.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [cards[index], cards[swapIndex]] = [cards[swapIndex], cards[index]];
+    }
+    return cards;
+}
+
+function createUnoDeck() {
+    let nextId = 0;
+    const deck = [];
+    UNO_SUITS.forEach((suit) => {
+        CARD_OPTIONS.forEach((value) => {
+            deck.push({ id: `uno-${nextId++}`, suit, value, type: 'variety' });
+        });
+        UNO_ACTIONS.forEach(({ type, value, copies }) => {
+            for (let copy = 0; copy < copies; copy += 1) {
+                deck.push({ id: `uno-${nextId++}`, suit, value, type });
+            }
+        });
+    });
+    for (let copy = 0; copy < 4; copy += 1) {
+        deck.push({ id: `uno-${nextId++}`, suit: null, value: 'Wildity', type: 'wild' });
+        deck.push({ id: `uno-${nextId++}`, suit: null, value: 'Draw Fourity', type: 'draw-four' });
+    }
+    return shuffleCards(deck);
+}
+
+function drawUnoCard(player, amount = 1) {
+    if (typeof player === 'string') {
+        if (!gameStarted || winnerId || gameSettings.mode !== 'unoity' || gamePlayers[currentTurnIndex]?.id !== player) return;
+        const currentPlayer = gamePlayers.find((candidate) => candidate.id === player);
+        if (!currentPlayer || unoDrawnCardId || currentPlayer.hand.some((card) => isUnoCardPlayable(card))) return;
+        const drawnCards = drawUnoCards(amount);
+        currentPlayer.hand.push(...drawnCards);
+        if (drawnCards.length) {
+            unoDrawnCardId = drawnCards[0].id;
+            gameMessage = `${currentPlayer.name} drew a card. They may play it if it matches or pass.`;
+        } else {
+            gameMessage = `${currentPlayer.name} drew no cards; the draw pile is empty.`;
+            advanceUnoTurn(1);
+        }
+        broadcastGameState();
+        return;
+    }
+    return drawUnoCards(amount);
+}
+
+function drawUnoCards(amount) {
+    const cards = [];
+    for (let index = 0; index < amount; index += 1) {
+        if (!unoDeck.length) {
+            const topCard = unoDiscardPile.pop();
+            unoDeck = shuffleCards(unoDiscardPile.splice(0));
+            if (topCard) unoDiscardPile.push(topCard);
+        }
+        const card = unoDeck.pop();
+        if (!card) break;
+        cards.push(card);
+    }
+    return cards;
+}
+
+function isUnoCardPlayable(card, topCard = unoDiscardPile.at(-1), activeSuit = unoCurrentSuit) {
+    if (!card || card.type === 'wild' || card.type === 'draw-four') return Boolean(card);
+    if (!topCard) return true;
+    return card.suit === activeSuit || card.value === topCard.value;
+}
+
+function canPlayUnoCard(card, hand) {
+    return isUnoCardPlayable(card) && (card.type !== 'draw-four'
+        || !hand.some((heldCard) => heldCard.id !== card.id && heldCard.suit === unoCurrentSuit));
+}
+
+function processUnoPlay(playerId, cardId, chosenSuit) {
+    if (!gameStarted || winnerId || gameSettings.mode !== 'unoity' || gamePlayers[currentTurnIndex]?.id !== playerId) return;
+    const player = gamePlayers.find((candidate) => candidate.id === playerId);
+    const cardIndex = player?.hand.findIndex((card) => card.id === cardId) ?? -1;
+    if (!player || player.isSpectator || cardIndex < 0 || (unoDrawnCardId && cardId !== unoDrawnCardId)) return;
+    const card = player.hand[cardIndex];
+    if (!canPlayUnoCard(card, player.hand)) return;
+    if ((card.type === 'wild' || card.type === 'draw-four') && !UNO_SUITS.includes(chosenSuit)) return;
+    player.hand.splice(cardIndex, 1);
+
+    unoDiscardPile.push(card);
+    unoCurrentSuit = card.suit || (UNO_SUITS.includes(chosenSuit) ? chosenSuit : unoCurrentSuit);
+    unoDrawnCardId = null;
+    selectedUnoCardId = null;
+    if (player.hand.length === 0) {
+        finishRoundWithWinner(player, `${player.name} wins Unoity!`, 'unoity');
+        broadcastGameState();
+        return;
+    }
+
+    let skippedPlayers = 0;
+    if (card.type === 'skip') {
+        skippedPlayers = 1;
+    } else if (card.type === 'reverse') {
+        unoDirection *= -1;
+        if (gamePlayers.length === 2) skippedPlayers = 1;
+    } else if (card.type === 'draw-two' || card.type === 'draw-four') {
+        const penalty = card.type === 'draw-two' ? 2 : 4;
+        const nextPlayerIndex = getUnoNextPlayerIndex(currentTurnIndex, 1);
+        const nextPlayer = gamePlayers[nextPlayerIndex];
+        nextPlayer.hand.push(...drawUnoCards(penalty));
+        skippedPlayers = 1;
+        gameMessage = `${player.name} played ${getUnoCardLabel(card)}. ${nextPlayer.name} draws ${penalty} and misses a turn.`;
+    }
+
+    if (card.type !== 'draw-two' && card.type !== 'draw-four') {
+        gameMessage = `${player.name} played ${getUnoCardLabel(card)}.`;
+    }
+    advanceUnoTurn(skippedPlayers + 1);
+    broadcastGameState();
+}
+
+function passUnoTurn(playerId) {
+    if (!gameStarted || winnerId || gameSettings.mode !== 'unoity' || gamePlayers[currentTurnIndex]?.id !== playerId || !unoDrawnCardId) return;
+    unoDrawnCardId = null;
+    selectedUnoCardId = null;
+    gameMessage = `${gamePlayers[currentTurnIndex].name} passed after drawing.`;
+    advanceUnoTurn(1);
+    broadcastGameState();
+}
+
+function getUnoNextPlayerIndex(fromIndex, steps) {
+    let index = fromIndex;
+    if (!gamePlayers.length) return -1;
+    for (let step = 0; step < steps; step += 1) {
+        let attempts = 0;
+        do {
+            index = (index + unoDirection + gamePlayers.length) % gamePlayers.length;
+            attempts += 1;
+        } while (gamePlayers[index].isSpectator && attempts < gamePlayers.length);
+    }
+    return index;
+}
+
+function advanceUnoTurn(steps) {
+    currentTurnIndex = getUnoNextPlayerIndex(currentTurnIndex, steps);
+    currentTurnPlayerId = gamePlayers[currentTurnIndex]?.id || 'host';
+}
+
+function getUnoCardLabel(card) {
+    return card.suit ? `${card.value} (${card.suit})` : card.value;
 }
 
 function showNextJoinRequest() {
@@ -854,6 +1131,61 @@ function answerJoinRequest(approved) {
     window.setTimeout(showNextJoinRequest, 0);
 }
 
+function kickPlayer(playerId, playerName) {
+    if (!isHost || !window.confirm(`Kick ${playerName} from the game?`)) return;
+    const player = Array.from(hostConnections.values()).find((candidate) => candidate.id === playerId);
+    if (!player) return;
+    if (player.connection.open) player.connection.send({ type: 'KICKED' });
+    removeHostPlayer(player.connection, 'was kicked from the game.');
+    if (player.connection.open) player.connection.close();
+}
+
+function removeHostPlayer(connection, message) {
+    const removedPlayer = hostConnections.get(connection);
+    if (!removedPlayer) return;
+    hostConnections.delete(connection);
+    const removedIndex = gamePlayers.findIndex((player) => player.connection === connection);
+    if (removedIndex < 0) {
+        updateHostLobbyStatus();
+        return;
+    }
+
+    const [gamePlayer] = gamePlayers.splice(removedIndex, 1);
+    const currentTurnWasRemoved = gamePlayer.id === currentTurnPlayerId;
+    if (removedIndex < currentTurnIndex) currentTurnIndex -= 1;
+    currentTurnIndex = gamePlayers.length ? Math.max(0, currentTurnIndex) % gamePlayers.length : 0;
+
+    if (gameStarted && !winnerId) {
+        if (gameSettings.mode === 'unoity') {
+            const activePlayers = gamePlayers.filter((player) => !player.isSpectator);
+            if (activePlayers.length === 1) {
+                finishRoundWithWinner(activePlayers[0], `${activePlayers[0].name} wins Unoity!`, 'unoity');
+            } else if (currentTurnWasRemoved && gamePlayers.length) {
+                unoDrawnCardId = null;
+                selectedUnoCardId = null;
+                currentTurnIndex = (removedIndex - (unoDirection < 0 ? 1 : 0) + gamePlayers.length) % gamePlayers.length;
+            }
+            broadcastGameState(`${removedPlayer.name} ${message}`);
+            return;
+        }
+        const activePlayers = gamePlayers.filter((player) => !player.isSpectator && player.hand.length > 0);
+        if (activePlayers.length <= 1) {
+            advanceTurnAfter(gamePlayer.id);
+        } else if (currentTurnWasRemoved) {
+            for (let offset = 0; offset < gamePlayers.length; offset += 1) {
+                const nextIndex = (removedIndex + offset) % gamePlayers.length;
+                if (!gamePlayers[nextIndex].isSpectator && gamePlayers[nextIndex].hand.length > 0) {
+                    currentTurnIndex = nextIndex;
+                    break;
+                }
+            }
+        }
+        broadcastGameState(`${removedPlayer.name} ${message}`);
+    } else {
+        updateHostLobbyStatus();
+    }
+}
+
 // Host triggers game start using settings UI
 function startGame() {
     if (!isHost) return;
@@ -864,13 +1196,14 @@ function startGame() {
     }
 
     // Gather custom host settings
-    const { cardsPerPlayer, allowedCards, allowSpectators } = getLobbySettings();
+    const { cardsPerPlayer, allowedCards, allowSpectators, mode } = getLobbySettings();
 
-    if(allowedCards.length === 0) return alert("Select at least one card type!");
+    if (mode !== 'unoity' && allowedCards.length === 0) return alert("Select at least one card type!");
 
-    gameSettings = { cardsPerPlayer, allowedCards, allowSpectators };
+    gameSettings = { cardsPerPlayer, allowedCards, allowSpectators, mode };
     gameStarted = true;
     winnerId = null;
+    winnerType = '';
     eliminationOrder = [];
     gameResults = [];
     roundId = typeof window.crypto?.randomUUID === 'function'
@@ -878,16 +1211,39 @@ function startGame() {
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     gameFinished = false;
     myDiscardPile = [];
-    gamePlayers = [{ id: 'host', name: getPlayerName(), hand: dealHand(gameSettings), discardPile: [], connection: null }];
+    unoDiscardPile = [];
+    unoCurrentSuit = '';
+    unoDirection = 1;
+    unoDrawPileCount = 0;
+    unoDrawnCardId = null;
+    selectedUnoCardId = null;
+    gamePlayers = [{ id: 'host', name: getPlayerName(), hand: [], discardPile: [], connection: null, isSpectator: false }];
     players.forEach(([connection, player]) => {
         player.id = connection.peer;
         player.connection = connection;
-        player.hand = dealHand(gameSettings);
+        player.hand = [];
         player.discardPile = [];
         gamePlayers.push(player);
     });
+    if (mode === 'unoity') {
+        unoDeck = createUnoDeck();
+        gamePlayers.forEach((player) => {
+            player.hand = drawUnoCards(7);
+        });
+        let startingCardIndex = unoDeck.findIndex((card) => card.type === 'variety');
+        if (startingCardIndex < 0) startingCardIndex = unoDeck.length - 1;
+        const [startingCard] = unoDeck.splice(startingCardIndex, 1);
+        unoDiscardPile.push(startingCard);
+        unoCurrentSuit = startingCard.suit;
+    } else {
+        gamePlayers.forEach((player) => {
+            player.hand = dealHand(gameSettings);
+        });
+        dealLordVerityCorners(gamePlayers);
+    }
     currentTurnIndex = 0;
     broadcastGameState('The round started.');
+    renderHostPlayerList('host-game-players');
 }
 
 function renderGameState(state) {
@@ -898,9 +1254,15 @@ function renderGameState(state) {
     currentTurnPlayerId = state.currentTurnId;
     gameMessage = state.message || '';
     winnerId = state.winnerId || null;
+    winnerType = state.winnerType || '';
     gameResults = state.results || [];
     roundId = state.roundId || '';
     myDiscardPile = state.myDiscardPile || [];
+    unoDiscardPile = state.unoDiscardPile || [];
+    unoCurrentSuit = state.unoCurrentSuit || '';
+    unoDirection = state.unoDirection || 1;
+    unoDrawPileCount = state.unoDrawPileCount || 0;
+    unoDrawnCardId = state.unoDrawnCardId || null;
     myHand = state.hand;
     renderGame();
     finishGameForLocalPlayer();
@@ -942,45 +1304,69 @@ function getPlayerCardCount(player) {
 function renderGame() {
     showScreen('game-screen');
     updatePlayerNames();
+    const isUnoity = gameSettings.mode === 'unoity';
     const localPlayer = gamePlayers.find((player) => player.id === gamePlayerId);
     const isOut = getPlayerCardCount(localPlayer) === 0;
     const canSpectate = gameSettings.allowSpectators !== false;
-    document.getElementById('out-panel').hidden = !isOut;
+    document.getElementById('out-panel').hidden = isUnoity || !isOut;
     document.getElementById('out-message').innerText = canSpectate
-        ? 'You have no cards left. You can spectate the rest of the round.'
+        ? 'You are spectating the rest of the round.'
         : 'You have no cards left. The host disabled spectating for this round.';
-    document.getElementById('game-play-area').hidden = isOut && !canSpectate;
+    document.getElementById('game-play-area').hidden = !isUnoity && isOut && !canSpectate;
+    document.getElementById('uno-table').hidden = !isUnoity;
+    document.getElementById('arena').hidden = isUnoity;
+    document.getElementById('guess-controls').hidden = isUnoity;
+    document.getElementById('discard-panel').hidden = isUnoity;
+    document.getElementById('my-hand-title').innerText = isUnoity ? `Your Hand (${myHand.length})` : 'Your Hand';
     renderWinnerOverlay();
     const selectedTargetId = document.getElementById('guess-target').value;
     const selectedCardName = document.getElementById('guess-card').value;
     const handContainer = document.getElementById('my-hand');
     handContainer.innerHTML = '';
 
-    myHand.forEach((cardName, index) => {
-        const cardEl = document.createElement('div');
-        cardEl.className = 'card';
-        cardEl.style.animationDelay = `${index * 65}ms`;
-        if (cardName === 'Verity') {
-            const character = document.createElement('img');
-            character.className = 'card-verity';
-            character.src = 'assets/download-removebg-preview.png';
-            character.alt = 'Verity, a smiling yellow character';
-            character.draggable = false;
-            cardEl.appendChild(character);
-        } else {
-            cardEl.innerText = cardName;
-        }
-        handContainer.appendChild(cardEl);
-    });
+    if (isUnoity) {
+        renderUnoBoard(gamePlayerId === currentTurnPlayerId);
+        renderUnoHand(gamePlayerId === currentTurnPlayerId);
+    } else {
+        myHand.forEach((cardName, index) => {
+            const cardEl = document.createElement('div');
+            cardEl.className = 'card';
+            cardEl.style.animationDelay = `${index * 65}ms`;
+            const lordCorner = LORD_VERITY_CORNERS.find(({ name }) => name === cardName);
+            if (lordCorner) {
+                cardEl.classList.add('lord-verity-piece');
+                cardEl.setAttribute('aria-label', cardName);
+                cardEl.title = cardName;
+                const artwork = document.createElement('span');
+                artwork.className = 'lord-corner-art';
+                artwork.dataset.corner = lordCorner.corner;
+                artwork.setAttribute('aria-hidden', 'true');
+                const label = document.createElement('span');
+                label.className = 'lord-corner-label';
+                label.textContent = lordCorner.corner.replace('-', ' ');
+                cardEl.append(artwork, label);
+            } else if (cardName === 'Verity') {
+                const character = document.createElement('img');
+                character.className = 'card-verity';
+                character.src = 'assets/download-removebg-preview.png';
+                character.alt = 'Verity, a smiling yellow character';
+                character.draggable = false;
+                cardEl.appendChild(character);
+            } else {
+                cardEl.innerText = cardName;
+            }
+            handContainer.appendChild(cardEl);
+        });
+    }
 
     const currentPlayer = gamePlayers.find((player) => player.id === currentTurnPlayerId);
     const isMyTurn = gamePlayerId === currentTurnPlayerId;
     document.getElementById('turn-status').innerText = winnerId
         ? 'The round is over.'
-        : isOut
+        : isOut && !isUnoity
             ? 'You are out.'
             : isMyTurn
-                ? 'Your turn: choose a player, card, and exact count.'
+                ? isUnoity ? 'Your turn: play a matching card or draw.' : 'Your turn: choose a player, card, and exact count.'
                 : `${currentPlayer?.name || 'Another player'}'s turn.`;
     document.getElementById('arena-text').innerText = gameMessage || 'Make an exact-count guess to take matching cards.';
     renderDiscardPile();
@@ -999,7 +1385,7 @@ function renderGame() {
 
     const cardSelect = document.getElementById('guess-card');
     cardSelect.replaceChildren();
-    const selectedCardPool = Array.isArray(gameSettings.allowedCards) ? gameSettings.allowedCards : [];
+    const selectedCardPool = getGuessableCards();
     selectedCardPool.forEach((cardName) => {
         const option = document.createElement('option');
         option.value = cardName;
@@ -1007,9 +1393,85 @@ function renderGame() {
         cardSelect.appendChild(option);
     });
     if (selectedCardPool.includes(selectedCardName)) cardSelect.value = selectedCardName;
-    document.getElementById('guess-controls').hidden = !isMyTurn || isOut || winnerId !== null || targetSelect.options.length === 0;
-    document.getElementById('submit-guess-button').disabled = !isMyTurn || isOut || winnerId !== null || targetSelect.options.length === 0;
+    if (!isUnoity) {
+        document.getElementById('guess-controls').hidden = !isMyTurn || isOut || winnerId !== null || targetSelect.options.length === 0;
+        document.getElementById('submit-guess-button').disabled = !isMyTurn || isOut || winnerId !== null || targetSelect.options.length === 0;
+    }
     updateGuessCountOptions();
+    renderHostPlayerList('host-game-players');
+}
+
+function renderUnoBoard(isMyTurn) {
+    const topCard = unoDiscardPile.at(-1);
+    const topCardElement = document.getElementById('uno-top-card');
+    topCardElement.textContent = topCard ? getUnoCardLabel(topCard) : 'No card';
+    topCardElement.dataset.suit = topCard?.suit?.toLowerCase() || 'wild';
+    document.getElementById('uno-current-suit').innerText = `Current variety: ${unoCurrentSuit || 'Any'}`;
+    document.getElementById('uno-direction').innerText = `Turn direction: ${unoDirection > 0 ? 'Clockwise' : 'Counterclockwise'}`;
+    document.getElementById('uno-draw-pile-count').innerText = `${unoDrawPileCount} cards left to draw`;
+
+    const selectedCard = myHand.find((card) => card.id === selectedUnoCardId);
+    const needsSuitChoice = selectedCard?.type === 'wild' || selectedCard?.type === 'draw-four';
+    document.getElementById('uno-wild-controls').hidden = !isMyTurn || !needsSuitChoice;
+    document.getElementById('uno-play-selected').disabled = !isMyTurn || !needsSuitChoice || winnerId !== null;
+    const hasPlayableCard = myHand.some((card) => canPlayUnoCard(card, myHand));
+    document.getElementById('uno-draw-button').disabled = !isMyTurn || hasPlayableCard || Boolean(unoDrawnCardId) || winnerId !== null;
+    document.getElementById('uno-pass-button').hidden = !isMyTurn || !unoDrawnCardId;
+}
+
+function renderUnoHand(isMyTurn) {
+    const handContainer = document.getElementById('my-hand');
+    if (!myHand.some((card) => card.id === selectedUnoCardId)) selectedUnoCardId = null;
+    myHand.forEach((card, index) => {
+        const cardButton = document.createElement('button');
+        cardButton.type = 'button';
+        cardButton.className = 'card uno-card';
+        cardButton.dataset.suit = card.suit?.toLowerCase() || 'wild';
+        cardButton.style.animationDelay = `${index * 45}ms`;
+        cardButton.textContent = getUnoCardLabel(card);
+        const isPlayable = canPlayUnoCard(card, myHand);
+        cardButton.setAttribute('aria-label', `${getUnoCardLabel(card)}${isPlayable ? ', playable' : ', not playable'}`);
+        cardButton.disabled = !isMyTurn || winnerId !== null || !isPlayable || (unoDrawnCardId && card.id !== unoDrawnCardId);
+        if (card.id === selectedUnoCardId) cardButton.classList.add('selected');
+        cardButton.addEventListener('click', () => {
+            if (card.type === 'wild' || card.type === 'draw-four') {
+                selectedUnoCardId = card.id;
+                renderGame();
+            } else {
+                sendUnoPlay(card);
+            }
+        });
+        handContainer.appendChild(cardButton);
+    });
+}
+
+function sendUnoPlay(card, suit = document.getElementById('uno-wild-suit').value) {
+    if (isHost) {
+        processUnoPlay('host', card.id, suit);
+    } else if (conn?.open) {
+        conn.send({ type: 'UNO_PLAY', cardId: card.id, suit });
+    }
+}
+
+function playSelectedUnoCard() {
+    const card = myHand.find((candidate) => candidate.id === selectedUnoCardId);
+    if (card && (card.type === 'wild' || card.type === 'draw-four')) sendUnoPlay(card);
+}
+
+function drawUnoTurn() {
+    if (isHost) {
+        drawUnoCard('host');
+    } else if (conn?.open) {
+        conn.send({ type: 'UNO_DRAW' });
+    }
+}
+
+function passUnoTurnFromUI() {
+    if (isHost) {
+        passUnoTurn('host');
+    } else if (conn?.open) {
+        conn.send({ type: 'UNO_PASS' });
+    }
 }
 
 function renderWinnerOverlay() {
@@ -1022,9 +1484,17 @@ function renderWinnerOverlay() {
     if (!winner) return;
     const localResult = gameResults.find((result) => result.id === gamePlayerId);
     document.getElementById('winner-title').innerText = localResult?.placement === 1 ? 'You win!' : 'You lost';
-    document.getElementById('winner-message').innerText = localResult
-        ? `${localResult.placement}${getPlacementSuffix(localResult.placement)} place. You earned ${localResult.reward} coins. Returning to the main menu...`
-        : `${winner.name} is the last player standing. Returning to the main menu...`;
+    if (winnerType === 'unoity') {
+        document.getElementById('winner-title').innerText = 'Unoity!';
+        document.getElementById('winner-message').innerText = `${winner.name} wins!${localResult ? ` You earned ${localResult.reward} coins.` : ''}`;
+    } else if (winnerType === 'lord-verity') {
+        document.getElementById('winner-title').innerText = 'Lord Verity!';
+        document.getElementById('winner-message').innerText = `${winner.name} wins!${localResult ? ` You earned ${localResult.reward} coins.` : ''}`;
+    } else {
+        document.getElementById('winner-message').innerText = localResult
+            ? `${localResult.placement}${getPlacementSuffix(localResult.placement)} place. You earned ${localResult.reward} coins. Returning to the main menu...`
+            : `${winner.name} is the last player standing. Returning to the main menu...`;
+    }
     overlay.hidden = false;
 }
 
@@ -1041,14 +1511,28 @@ function renderDiscardPile() {
     myDiscardPile.forEach((cardName) => {
         const card = document.createElement('div');
         card.className = 'discarded-card';
-        card.textContent = cardName;
+        const lordCorner = LORD_VERITY_CORNERS.find(({ name }) => name === cardName);
+        if (lordCorner) {
+            card.classList.add('lord-corner-discard');
+            card.setAttribute('aria-label', cardName);
+            card.title = cardName;
+            const artwork = document.createElement('span');
+            artwork.className = 'lord-corner-art';
+            artwork.dataset.corner = lordCorner.corner;
+            artwork.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.textContent = lordCorner.corner.replace('-', ' ');
+            card.append(artwork, label);
+        } else {
+            card.textContent = cardName;
+        }
         fragment.appendChild(card);
     });
     container.appendChild(fragment);
 }
 
 function submitGuess() {
-    if (!gameStarted || gamePlayerId !== currentTurnPlayerId) return;
+    if (!gameStarted || gameSettings.mode === 'unoity' || gamePlayerId !== currentTurnPlayerId) return;
     const targetId = document.getElementById('guess-target').value;
     const target = gamePlayers.find((player) => player.id === targetId);
     const guess = {
@@ -1056,7 +1540,7 @@ function submitGuess() {
         cardName: document.getElementById('guess-card').value,
         guessedCount: Number(document.getElementById('guess-count').value)
     };
-    if (!target || !gameSettings.allowedCards.includes(guess.cardName) || !Number.isInteger(guess.guessedCount) || guess.guessedCount < 1 || guess.guessedCount > getPlayerCardCount(target)) return;
+    if (!target || !getGuessableCards().includes(guess.cardName) || !Number.isInteger(guess.guessedCount) || guess.guessedCount < 1 || guess.guessedCount > getPlayerCardCount(target)) return;
     if (isHost) {
         processGuess('host', guess.targetId, guess.cardName, guess.guessedCount);
     } else if (conn?.open) {

@@ -278,6 +278,11 @@
         .match-toggle input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
         #host-settings { background: var(--surface-muted); padding: 15px; border-radius: 8px; margin-top: 20px; text-align: left; }
         #host-settings h3, #host-settings > p { text-align: center; }
+        .host-player-list { display: grid; gap: 8px; margin: 16px 0; padding: 12px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; text-align: left; }
+        .host-player-list[hidden] { display: none; }
+        .host-player-list h3, .host-player-list p { margin: 0; }
+        .host-player-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .host-player-row button { width: auto; margin: 0; padding: 8px 12px; }
         #game-board { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 800px; }
         .game-columns { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 16px; align-items: start; }
         .game-main { min-width: 0; }
@@ -285,6 +290,25 @@
         .discard-panel h3 { margin-top: 0; }
         #discard-pile { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
         .discarded-card { padding: 6px 8px; background: var(--surface); border: 1px solid var(--border-color); border-radius: 6px; overflow-wrap: anywhere; }
+        .uno-table { display: grid; justify-items: center; gap: 10px; padding: 16px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
+        .uno-table[hidden] { display: none; }
+        .uno-top-card { display: grid; width: min(220px, 70vw); min-height: 120px; padding: 18px; place-items: center; color: #172019; background: #e5ece8; border: 5px solid #fff; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,.2); font-size: 1.3rem; font-weight: 800; text-align: center; overflow-wrap: anywhere; }
+        .uno-top-card[data-suit="green"] { background: #65bd76; }
+        .uno-top-card[data-suit="blue"] { background: #67a9e8; }
+        .uno-top-card[data-suit="red"] { background: #ef6a65; }
+        .uno-top-card[data-suit="yellow"] { background: #f2d85f; }
+        .uno-top-card[data-suit="wild"] { background: linear-gradient(135deg, #ef6a65 0 25%, #f2d85f 25% 50%, #65bd76 50% 75%, #67a9e8 75%); }
+        .uno-card { width: 118px; min-height: 154px; padding: 10px; color: #172019; border: 5px solid #fff; border-radius: 14px; font-size: 14px; text-align: center; overflow-wrap: anywhere; }
+        .uno-card[data-suit="green"] { background: #65bd76; }
+        .uno-card[data-suit="blue"] { background: #67a9e8; }
+        .uno-card[data-suit="red"] { background: #ef6a65; }
+        .uno-card[data-suit="yellow"] { background: #f2d85f; }
+        .uno-card[data-suit="wild"] { background: linear-gradient(135deg, #ef6a65 0 25%, #f2d85f 25% 50%, #65bd76 50% 75%, #67a9e8 75%); }
+        .uno-card.selected { outline: 4px solid var(--accent); outline-offset: 3px; }
+        .uno-card:disabled { opacity: .48; }
+        .uno-wild-controls { display: flex; flex-wrap: wrap; align-items: end; justify-content: center; gap: 10px; }
+        .uno-wild-controls[hidden] { display: none; }
+        .uno-wild-controls select, .uno-wild-controls button { width: auto; margin: 0; }
         .out-panel { padding: 18px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
         .out-panel[hidden], .winner-overlay[hidden], #game-play-area[hidden] { display: none; }
         .winner-overlay { position: fixed; inset: 0; z-index: 9990; display: grid; place-items: center; padding: 24px; background: rgba(0,0,0,.78); animation: winner-fade-in 400ms ease-out both; }
@@ -307,6 +331,15 @@
             transition: transform 0.2s;
             animation: card-deal 420ms ease-out both;
         }
+        .lord-verity-piece { flex-direction: column; gap: 5px; }
+        .lord-corner-art { display: block; width: 76px; height: 76px; background-image: url("assets/download-removebg-preview.png"); background-repeat: no-repeat; background-size: 200% 200%; }
+        .lord-corner-art[data-corner="top-left"] { background-position: 0 0; }
+        .lord-corner-art[data-corner="top-right"] { background-position: 100% 0; }
+        .lord-corner-art[data-corner="bottom-left"] { background-position: 0 100%; }
+        .lord-corner-art[data-corner="bottom-right"] { background-position: 100% 100%; }
+        .lord-corner-label { font-size: 11px; text-transform: capitalize; }
+        .lord-corner-discard { display: grid; justify-items: center; gap: 4px; font-size: 11px; text-transform: capitalize; }
+        .lord-corner-discard .lord-corner-art { width: 48px; height: 48px; }
         .card-verity { width: 74px; height: 74px; object-fit: contain; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
         .guess-controls { display: grid; gap: 8px; padding: 14px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; text-align: left; }
         .guess-controls[hidden] { display: none; }
@@ -506,28 +539,36 @@
         <h3 id="display-lobby-id">-</h3>
         <p id="lobby-player-names"></p>
         <p id="lobby-status">Waiting for player to join...</p>
+        <div id="host-lobby-players" class="host-player-list" hidden aria-label="Connected players"></div>
         <div id="guest-lobby-settings" class="status-box" hidden>Waiting for host settings...</div>
 
         <!-- Host Only Settings -->
         <div id="host-settings" style="display: none;">
             <h3>Match Settings</h3>
-            <label for="card-count">Cards per player:</label>
-            <select id="card-count" onchange="sendLobbySettings()">
-                <option value="3">3 Cards</option>
-                <option value="5" selected>5 Cards</option>
-                <option value="7">7 Cards</option>
+            <label for="game-mode">Game mode:</label>
+            <select id="game-mode" onchange="updateHostModeSettings(); sendLobbySettings()">
+                <option value="guess-variety" selected>Guess the Variety</option>
+                <option value="unoity">Unoity</option>
             </select>
             <label class="match-toggle" for="allow-spectators">
                 <input id="allow-spectators" type="checkbox" checked onchange="sendLobbySettings()">
                 <span>Allow eliminated players to spectate</span>
             </label>
-            <p><strong>Card pool</strong></p>
-            <div class="card-pool-actions">
-                <button class="secondary-button" type="button" onclick="selectCardOptions('all')">All cards</button>
-                <button class="secondary-button" type="button" onclick="selectCardOptions('verity')">Verity family</button>
-                <button class="secondary-button" type="button" onclick="selectCardOptions('none')">Clear</button>
+            <div id="guess-mode-settings">
+                <label for="card-count">Cards per player:</label>
+                <select id="card-count" onchange="sendLobbySettings()">
+                    <option value="3">3 Cards</option>
+                    <option value="5" selected>5 Cards</option>
+                    <option value="7">7 Cards</option>
+                </select>
+                <p><strong>Card pool</strong></p>
+                <div class="card-pool-actions">
+                    <button class="secondary-button" type="button" onclick="selectCardOptions('all')">All cards</button>
+                    <button class="secondary-button" type="button" onclick="selectCardOptions('verity')">Verity family</button>
+                    <button class="secondary-button" type="button" onclick="selectCardOptions('none')">Clear</button>
+                </div>
+                <div id="card-options" class="card-options" aria-label="Available card types" onchange="sendLobbySettings()"></div>
             </div>
-            <div id="card-options" class="card-options" aria-label="Available card types" onchange="sendLobbySettings()"></div>
             <button id="start-game-button" onclick="startGame()" style="margin-top: 15px;" disabled>Waiting for player</button>
         </div>
     </div>
@@ -537,6 +578,7 @@
         <button class="secondary-button screen-back" type="button" onclick="returnToMenu()">Back to menu</button>
         <div id="game-board">
             <p id="game-player-names"></p>
+            <div id="host-game-players" class="host-player-list" hidden aria-label="Players in this game"></div>
             <div class="status-box" id="turn-status">Game Started!</div>
             <div id="out-panel" class="out-panel" hidden>
                 <h2>You're out</h2>
@@ -544,6 +586,25 @@
                 <button id="leave-after-out-button" type="button" onclick="returnToMenu()">Leave game</button>
             </div>
             <div id="game-play-area">
+            <section id="uno-table" class="uno-table" hidden aria-label="Unoity table">
+                <h2>Unoity</h2>
+                <div id="uno-top-card" class="uno-top-card" data-suit="wild">Waiting for the first card</div>
+                <p id="uno-current-suit"></p>
+                <p id="uno-direction"></p>
+                <p id="uno-draw-pile-count"></p>
+                <div id="uno-wild-controls" class="uno-wild-controls" hidden>
+                    <label for="uno-wild-suit">Choose the next variety</label>
+                    <select id="uno-wild-suit">
+                        <option>Green</option>
+                        <option>Blue</option>
+                        <option>Red</option>
+                        <option>Yellow</option>
+                    </select>
+                    <button id="uno-play-selected" type="button" onclick="playSelectedUnoCard()">Play selected wild card</button>
+                </div>
+                <button id="uno-draw-button" type="button" onclick="drawUnoTurn()">Draw a card</button>
+                <button id="uno-pass-button" class="secondary-button" type="button" onclick="passUnoTurnFromUI()" hidden>Pass turn</button>
+            </section>
             <div class="game-columns">
                 <div class="game-main">
             <div id="arena" style="height: 110px; display: flex; justify-content: center; align-items: center; border: 2px dashed var(--border-color); border-radius: 8px; padding: 8px;">
@@ -558,10 +619,10 @@
                 <input id="guess-count" type="number" min="1" max="0" step="1" inputmode="numeric" placeholder="Type a number" disabled>
                 <button id="submit-guess-button" type="button" onclick="submitGuess()">Make Guess</button>
             </div>
-            <h3>Your Hand</h3>
+            <h3 id="my-hand-title">Your Hand</h3>
             <div id="my-hand" class="hand"></div>
                 </div>
-                <aside class="discard-panel" aria-labelledby="discard-title">
+                <aside id="discard-panel" class="discard-panel" aria-labelledby="discard-title">
                     <h3 id="discard-title">Your discard pile <span id="discard-count">0</span></h3>
                     <div id="discard-pile" aria-live="polite"></div>
                 </aside>
@@ -571,7 +632,7 @@
     </div>
     <div id="winner-overlay" class="winner-overlay" hidden aria-live="assertive">
         <div class="winner-banner">
-            <img src="assets/download-removebg-preview.png" alt="">
+            <img src="assets/download-removebg-preview.png" alt="Lord Verity assembled from four corner cards">
             <h2 id="winner-title">Winner!</h2>
             <p id="winner-message"></p>
         </div>
