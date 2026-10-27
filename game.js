@@ -13,6 +13,7 @@ let currentTurnIndex = 0;
 let currentTurnPlayerId = 'host';
 let gamePlayerId = 'host';
 let gameMessage = '';
+let winnerId = null;
 let pendingJoinRequests = [];
 let currentJoinRequest = null;
 let brandTapCount = 0;
@@ -145,7 +146,8 @@ function getLobbySettings() {
     const allowedCards = Array.from(document.querySelectorAll('#card-options input:checked'), (checkbox) => checkbox.dataset.cardName);
     return {
         cardsPerPlayer: parseInt(document.getElementById('card-count').value, 10),
-        allowedCards
+        allowedCards,
+        allowSpectators: document.getElementById('allow-spectators').checked
     };
 }
 
@@ -160,7 +162,7 @@ function sendLobbySettings() {
 function updateGuestSettings(settings) {
     const cardList = settings.allowedCards.length ? settings.allowedCards.join(', ') : 'None selected yet';
     document.getElementById('guest-lobby-settings').innerText =
-        `Host settings\nCards per player: ${settings.cardsPerPlayer}\nCard pool: ${cardList}`;
+        `Host settings\nCards per player: ${settings.cardsPerPlayer}\nCard pool: ${cardList}\nEliminated players: ${settings.allowSpectators ? 'can spectate' : 'cannot spectate'}`;
     document.getElementById('guest-lobby-settings').hidden = false;
 }
 
@@ -179,6 +181,8 @@ function returnToMenu() {
     currentTurnPlayerId = 'host';
     gamePlayerId = 'host';
     gameMessage = '';
+    winnerId = null;
+    document.getElementById('winner-overlay').hidden = true;
     pendingJoinRequests = [];
     currentJoinRequest = null;
     opponentName = 'Waiting for player';
@@ -457,6 +461,7 @@ function createLobby() {
     currentTurnPlayerId = 'host';
     gamePlayerId = 'host';
     gameMessage = '';
+    winnerId = null;
     lobbyCode = '';
     showScreen('lobby-screen');
     document.getElementById('display-lobby-id').innerText = 'Connecting...';
@@ -644,6 +649,7 @@ function handleGuestMessage(data) {
         gamePlayerId = data.youId;
         currentTurnPlayerId = data.currentTurnId;
         gameMessage = data.message || '';
+        winnerId = data.winnerId || null;
         renderGame();
     }
 }
@@ -662,6 +668,7 @@ function acceptHostPlayer(connection, name) {
     if (gameStarted) {
         player.hand = dealHand(gameSettings);
         gamePlayers.push(player);
+        winnerId = null;
         broadcastGameState(`${name} joined the round.`);
     } else {
         connection.send({ type: 'LOBBY_SETTINGS', settings });
@@ -686,7 +693,8 @@ function getPublicGameState() {
         })),
         currentTurnId: gamePlayers[currentTurnIndex]?.id || 'host',
         settings: gameSettings,
-        message: gameMessage
+        message: gameMessage,
+        winnerId
     };
 }
 
@@ -713,7 +721,7 @@ function broadcastGameState(message = '') {
 }
 
 function processGuess(guesserId, targetId, cardName, guessedCount) {
-    if (!gameStarted || gamePlayers[currentTurnIndex]?.id !== guesserId) return;
+    if (!gameStarted || winnerId || gamePlayers[currentTurnIndex]?.id !== guesserId) return;
     const guesser = gamePlayers.find((player) => player.id === guesserId);
     const target = gamePlayers.find((player) => player.id === targetId && player.id !== guesserId);
     const count = Number(guessedCount);
@@ -728,8 +736,27 @@ function processGuess(guesserId, targetId, cardName, guessedCount) {
         gameMessage = `${guesser.name} guessed ${target.name} had ${count} ${cardName} card${count === 1 ? '' : 's'}, but was wrong.`;
     }
 
-    currentTurnIndex = (currentTurnIndex + 1) % gamePlayers.length;
+    advanceTurnAfter(guesserId);
     broadcastGameState();
+}
+
+function advanceTurnAfter(playerId) {
+    const activePlayers = gamePlayers.filter((player) => player.hand.length > 0);
+    if (activePlayers.length <= 1) {
+        winnerId = activePlayers[0]?.id || null;
+        if (winnerId) currentTurnIndex = gamePlayers.findIndex((player) => player.id === winnerId);
+        return;
+    }
+
+    winnerId = null;
+    const playerIndex = gamePlayers.findIndex((player) => player.id === playerId);
+    for (let offset = 1; offset <= gamePlayers.length; offset += 1) {
+        const nextIndex = (playerIndex + offset) % gamePlayers.length;
+        if (gamePlayers[nextIndex].hand.length > 0) {
+            currentTurnIndex = nextIndex;
+            return;
+        }
+    }
 }
 
 function showNextJoinRequest() {
@@ -766,12 +793,13 @@ function startGame() {
     }
 
     // Gather custom host settings
-    const { cardsPerPlayer, allowedCards } = getLobbySettings();
+    const { cardsPerPlayer, allowedCards, allowSpectators } = getLobbySettings();
 
     if(allowedCards.length === 0) return alert("Select at least one card type!");
 
-    gameSettings = { cardsPerPlayer, allowedCards };
+    gameSettings = { cardsPerPlayer, allowedCards, allowSpectators };
     gameStarted = true;
+    winnerId = null;
     myDiscardPile = [];
     gamePlayers = [{ id: 'host', name: getPlayerName(), hand: dealHand(gameSettings), discardPile: [], connection: null }];
     players.forEach(([connection, player]) => {
@@ -792,6 +820,7 @@ function renderGameState(state) {
     gamePlayerId = state.youId;
     currentTurnPlayerId = state.currentTurnId;
     gameMessage = state.message || '';
+    winnerId = state.winnerId || null;
     myDiscardPile = state.myDiscardPile || [];
     myHand = state.hand;
     renderGame();
@@ -820,6 +849,15 @@ function getPlayerCardCount(player) {
 function renderGame() {
     showScreen('game-screen');
     updatePlayerNames();
+    const localPlayer = gamePlayers.find((player) => player.id === gamePlayerId);
+    const isOut = getPlayerCardCount(localPlayer) === 0;
+    const canSpectate = gameSettings.allowSpectators !== false;
+    document.getElementById('out-panel').hidden = !isOut;
+    document.getElementById('out-message').innerText = canSpectate
+        ? 'You have no cards left. You can spectate the rest of the round.'
+        : 'You have no cards left. The host disabled spectating for this round.';
+    document.getElementById('game-play-area').hidden = isOut && !canSpectate;
+    renderWinnerOverlay();
     const selectedTargetId = document.getElementById('guess-target').value;
     const selectedCardName = document.getElementById('guess-card').value;
     const handContainer = document.getElementById('my-hand');
@@ -844,9 +882,13 @@ function renderGame() {
 
     const currentPlayer = gamePlayers.find((player) => player.id === currentTurnPlayerId);
     const isMyTurn = gamePlayerId === currentTurnPlayerId;
-    document.getElementById('turn-status').innerText = isMyTurn
-        ? 'Your turn: choose a player, card, and exact count.'
-        : `${currentPlayer?.name || 'Another player'}'s turn.`;
+    document.getElementById('turn-status').innerText = winnerId
+        ? 'The round is over.'
+        : isOut
+            ? 'You are out.'
+            : isMyTurn
+                ? 'Your turn: choose a player, card, and exact count.'
+                : `${currentPlayer?.name || 'Another player'}'s turn.`;
     document.getElementById('arena-text').innerText = gameMessage || 'Make an exact-count guess to take matching cards.';
     renderDiscardPile();
 
@@ -872,9 +914,22 @@ function renderGame() {
         cardSelect.appendChild(option);
     });
     if (selectedCardPool.includes(selectedCardName)) cardSelect.value = selectedCardName;
-    document.getElementById('guess-controls').hidden = !isMyTurn || targetSelect.options.length === 0;
-    document.getElementById('submit-guess-button').disabled = !isMyTurn || targetSelect.options.length === 0;
+    document.getElementById('guess-controls').hidden = !isMyTurn || isOut || winnerId !== null || targetSelect.options.length === 0;
+    document.getElementById('submit-guess-button').disabled = !isMyTurn || isOut || winnerId !== null || targetSelect.options.length === 0;
     updateGuessCountOptions();
+}
+
+function renderWinnerOverlay() {
+    const overlay = document.getElementById('winner-overlay');
+    if (!winnerId) {
+        overlay.hidden = true;
+        return;
+    }
+    const winner = gamePlayers.find((player) => player.id === winnerId);
+    if (!winner) return;
+    document.getElementById('winner-title').innerText = winner.id === gamePlayerId ? 'You win!' : `${winner.name} wins!`;
+    document.getElementById('winner-message').innerText = `${winner.name} is the last player standing.`;
+    overlay.hidden = false;
 }
 
 function renderDiscardPile() {

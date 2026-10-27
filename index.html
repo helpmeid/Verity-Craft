@@ -273,6 +273,8 @@
         .card-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 10px; max-height: 300px; overflow-y: auto; padding: 6px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface); }
         .card-pool-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
         .card-pool-actions button { padding: 10px 6px; font-size: 14px; }
+        .match-toggle { display: flex; align-items: center; gap: 10px; text-align: left; }
+        .match-toggle input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
         #host-settings { background: var(--surface-muted); padding: 15px; border-radius: 8px; margin-top: 20px; text-align: left; }
         #host-settings h3, #host-settings > p { text-align: center; }
         #game-board { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 800px; }
@@ -282,6 +284,12 @@
         .discard-panel h3 { margin-top: 0; }
         #discard-pile { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
         .discarded-card { padding: 6px 8px; background: var(--surface); border: 1px solid var(--border-color); border-radius: 6px; overflow-wrap: anywhere; }
+        .out-panel { padding: 18px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
+        .out-panel[hidden], .winner-overlay[hidden], #game-play-area[hidden] { display: none; }
+        .winner-overlay { position: fixed; inset: 0; z-index: 9990; display: grid; place-items: center; padding: 24px; background: rgba(0,0,0,.78); animation: winner-fade-in 400ms ease-out both; }
+        .winner-banner { width: min(460px, 100%); padding: 28px; color: var(--text-color); background: var(--surface); border: 2px solid var(--accent); border-radius: 8px; text-align: center; animation: winner-pop 650ms cubic-bezier(.2,.8,.25,1) both; }
+        .winner-banner img { width: 100px; height: 100px; object-fit: contain; }
+        .winner-banner h2 { margin: 10px 0; }
         .hand { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
         .card {
             width: 100px;
@@ -351,8 +359,10 @@
             from { opacity: .95; transform: translate(-50%, -50%) scale(1); }
             to { opacity: 0; transform: translate(calc(-50% + var(--particle-x)), calc(-50% + var(--particle-y))) scale(.15); }
         }
+        @keyframes winner-fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes winner-pop { 0% { transform: scale(.65) translateY(18px); } 70% { transform: scale(1.05); } 100% { transform: scale(1); } }
         @media (prefers-reduced-motion: reduce) {
-            body::before, body[data-palette="verity-secret"]::after, .verity-mascot, .card, .click-particle { animation: none; }
+            body::before, body[data-palette="verity-secret"]::after, .verity-mascot, .card, .click-particle, .winner-overlay, .winner-banner { animation: none; }
         }
         @media (max-width: 420px) {
             body { padding: 68px 14px 14px; }
@@ -505,6 +515,10 @@
                 <option value="5" selected>5 Cards</option>
                 <option value="7">7 Cards</option>
             </select>
+            <label class="match-toggle" for="allow-spectators">
+                <input id="allow-spectators" type="checkbox" checked onchange="sendLobbySettings()">
+                <span>Allow eliminated players to spectate</span>
+            </label>
             <p><strong>Card pool</strong></p>
             <div class="card-pool-actions">
                 <button class="secondary-button" type="button" onclick="selectCardOptions('all')">All cards</button>
@@ -522,6 +536,12 @@
         <div id="game-board">
             <p id="game-player-names"></p>
             <div class="status-box" id="turn-status">Game Started!</div>
+            <div id="out-panel" class="out-panel" hidden>
+                <h2>You're out</h2>
+                <p id="out-message"></p>
+                <button id="leave-after-out-button" type="button" onclick="returnToMenu()">Leave game</button>
+            </div>
+            <div id="game-play-area">
             <div class="game-columns">
                 <div class="game-main">
             <div id="arena" style="height: 110px; display: flex; justify-content: center; align-items: center; border: 2px dashed var(--border-color); border-radius: 8px; padding: 8px;">
@@ -544,6 +564,14 @@
                     <div id="discard-pile" aria-live="polite"></div>
                 </aside>
             </div>
+            </div>
+        </div>
+    </div>
+    <div id="winner-overlay" class="winner-overlay" hidden aria-live="assertive">
+        <div class="winner-banner">
+            <img src="assets/download-removebg-preview.png" alt="">
+            <h2 id="winner-title">Winner!</h2>
+            <p id="winner-message"></p>
         </div>
     </div>
 
