@@ -297,6 +297,8 @@
         .opponent-card[data-current-turn="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
         .opponent-card-name { max-width: 160px; overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
         .opponent-card-count { font-size: 13px; }
+        .opponent-card-viewable { cursor: pointer; }
+        .opponent-card-viewable:hover, .opponent-card-viewable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         .opponent-card-backs { display: flex; justify-content: center; min-height: 36px; padding: 0 8px; }
         .opponent-card-back { width: 24px; height: 34px; margin-left: -8px; border: 2px solid #fff; border-radius: 5px; background: repeating-linear-gradient(45deg, #173b60 0 4px, #245b8d 4px 8px); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
         .opponent-card-back:first-child { margin-left: 0; }
@@ -403,6 +405,7 @@
         .card-catalog-heading h2 { margin: 0; }
         .card-catalog-heading button { width: auto; margin: 0; }
         .card-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; max-height: min(65dvh, 620px); overflow: auto; padding: 8px 4px; }
+        .spectator-deck-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-height: min(65dvh, 620px); overflow: auto; padding: 8px 4px; }
         .catalog-card { width: 100%; height: auto; aspect-ratio: 5 / 7; padding-top: 21px; animation: none; cursor: default; }
         .catalog-card .playing-card-name { font-size: 11px; }
         .catalog-lord-art { width: 100%; height: 100%; background-size: 200% 200%; }
@@ -674,6 +677,10 @@
                 <option value="guess-variety" selected>Guess the Variety</option>
                 <option value="unoity">Unoity</option>
             </select>
+            <label class="match-toggle" for="allow-late-joiners">
+                <input id="allow-late-joiners" type="checkbox" checked onchange="sendLobbySettings()">
+                <span>Allow players to join after the game starts</span>
+            </label>
             <label class="match-toggle" for="allow-spectators">
                 <input id="allow-spectators" type="checkbox" checked onchange="sendLobbySettings()">
                 <span>Allow eliminated players to spectate</span>
@@ -730,7 +737,7 @@
                 <div id="turn-timer-bar" class="turn-timer-bar"></div>
             </div>
             <div id="out-panel" class="out-panel" hidden>
-                <h2>You're out</h2>
+                <h2 id="out-title">You're out</h2>
                 <p id="out-message"></p>
                 <button id="leave-after-out-button" type="button" onclick="returnToMenu()">Leave game</button>
             </div>
@@ -804,6 +811,14 @@
         </div>
         <p>Browse the character cards and Lord Verity pieces used in the game.</p>
         <div id="card-catalog" class="card-catalog"></div>
+    </dialog>
+    <dialog id="spectator-deck-dialog" class="card-catalog-dialog" aria-labelledby="spectator-deck-title">
+        <div class="card-catalog-heading">
+            <h2 id="spectator-deck-title">Player deck</h2>
+            <button class="secondary-button" type="button" onclick="closeSpectatorDeck()">Close</button>
+        </div>
+        <p id="spectator-deck-description"></p>
+        <div id="spectator-deck-cards" class="spectator-deck-cards"></div>
     </dialog>
     <div id="winner-overlay" class="winner-overlay" hidden aria-live="assertive">
         <div class="winner-banner">
