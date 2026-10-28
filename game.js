@@ -42,7 +42,7 @@ let wasKicked = false;
 let versionMismatch = false;
 let brandTapCount = 0;
 let brandTapTimeout = null;
-const GAME_VERSION = '1.0.5';
+const GAME_VERSION = '1.0.6';
 const CARD_OPTIONS = [
     'Verity',
     'Freakyity',

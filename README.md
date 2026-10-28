@@ -1,6 +1,8 @@
 # Verity-Craft
 a card game you'll love
 
+**Current version: 1.0.6**
+
 ## Game modes
 
 - **Guess the Variety**: Guess how many copies of a variety card another player holds.
@@ -14,4 +16,4 @@ Click the **Debug** button in the bottom-right corner of the main menu to show o
 
 Hosts can turn Lord Verity corner cards on or off in Guess the Variety match settings. When enabled, the four corners are randomly distributed into players' assembly areas and count toward their starting card limit. A three-corner start has a 1% chance; otherwise players start with at most two, and no one can start with all four. Opponent panels show assembled corners as ordinary card backs. Eliminating a player transfers their assembled corners to the player who eliminated them.
 
-The game version is shown in the bottom-left corner. Multiplayer lobbies require both players to run the same version; a mismatch is reported instead of allowing an incompatible connection. Update `GAME_VERSION` in `game.js` whenever publishing a new release so players can tell which ZIP they have.
+The game version is shown in the bottom-left corner. Multiplayer lobbies require both players to run the same version; a mismatch is reported instead of allowing an incompatible connection. Keep the current version here in sync with `GAME_VERSION` in `game.js` when publishing a new release so players can tell which ZIP they have.
