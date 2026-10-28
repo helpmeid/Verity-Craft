@@ -18,6 +18,12 @@ let unoDrawnCardId = null;
 let selectedUnoCardId = null;
 let currentTurnIndex = 0;
 let currentTurnPlayerId = 'host';
+let lastObservedTurnPlayerId = null;
+let turnDeadline = 0;
+let turnTimerPlayerId = null;
+let turnTimerHandle = null;
+let turnCountdownInterval = null;
+let turnNotificationTimeout = null;
 let gamePlayerId = 'host';
 let gameMessage = '';
 let winnerId = null;
@@ -32,8 +38,10 @@ let rewardedRoundIds = new Set();
 let pendingJoinRequests = [];
 let currentJoinRequest = null;
 let wasKicked = false;
+let versionMismatch = false;
 let brandTapCount = 0;
 let brandTapTimeout = null;
+const GAME_VERSION = '1.0.0';
 const CARD_OPTIONS = [
     'Verity',
     'Freakyity',
@@ -60,6 +68,10 @@ const CARD_OPTIONS = [
     'Loveity',
     'Cruelty'
 ];
+const CHARACTER_ARTWORK = new Map(CARD_OPTIONS.map((cardName) => [
+    cardName,
+    `assets/cards/${cardName.toLowerCase()}.png`
+]));
 const VERITY_FAMILY = new Set(CARD_OPTIONS.slice(0, -3));
 const LORD_VERITY_CORNERS = [
     { name: 'Lord Verity: Top Left', corner: 'top-left' },
@@ -67,6 +79,7 @@ const LORD_VERITY_CORNERS = [
     { name: 'Lord Verity: Bottom Left', corner: 'bottom-left' },
     { name: 'Lord Verity: Bottom Right', corner: 'bottom-right' }
 ];
+const LORD_VERITY_TRIPLE_START_CHANCE = 0.01;
 const UNO_SUITS = ['Green', 'Blue', 'Red', 'Yellow'];
 const UNO_ACTIONS = [
     { type: 'skip', value: 'Skipity', copies: 2 },
@@ -124,6 +137,13 @@ function openSettings() {
     showSettingsPanel('settings-main-panel');
     dialog.appendChild(document.getElementById('cursor-glow'));
     dialog.showModal();
+}
+
+function restoreCursorToOpenDialog() {
+    const cursorGlow = document.getElementById('cursor-glow');
+    const openDialog = [document.getElementById('card-catalog-dialog'), document.getElementById('settings-dialog')]
+        .find((dialog) => dialog.open);
+    (openDialog || document.body).appendChild(cursorGlow);
 }
 
 function closeSettings() {
@@ -218,12 +238,27 @@ function renderHostPlayerList(containerId) {
 
 function getLobbySettings() {
     const allowedCards = Array.from(document.querySelectorAll('#card-options input:checked'), (checkbox) => checkbox.dataset.cardName);
+    const turnDurationSeconds = document.getElementById('turn-duration-unlimited').checked
+        ? 0
+        : Number(document.getElementById('turn-duration').value);
     return {
         cardsPerPlayer: parseInt(document.getElementById('card-count').value, 10),
         allowedCards,
         allowSpectators: document.getElementById('allow-spectators').checked,
+        allowLordVerity: document.getElementById('allow-lord-verity').checked,
+        turnDurationSeconds,
         mode: document.getElementById('game-mode').value
     };
+}
+
+function updateTurnDurationControl() {
+    const durationControl = document.getElementById('turn-duration');
+    const isUnlimited = document.getElementById('turn-duration-unlimited').checked;
+    const durationSeconds = Number(durationControl.value);
+    const minutes = Math.floor(durationSeconds / 60);
+    const seconds = String(durationSeconds % 60).padStart(2, '0');
+    document.getElementById('turn-duration-value').value = `${minutes}:${seconds}`;
+    durationControl.disabled = isUnlimited;
 }
 
 function updateHostModeSettings() {
@@ -241,9 +276,12 @@ function sendLobbySettings() {
 function updateGuestSettings(settings) {
     const modeName = settings.mode === 'unoity' ? 'Unoity' : 'Guess the Variety';
     const guestSettings = document.getElementById('guest-lobby-settings');
-    guestSettings.innerText = settings.mode === 'unoity'
-        ? `Host settings\nMode: ${modeName}\nPlayers joining mid-game: ${settings.allowSpectators ? 'can spectate' : 'cannot join'}`
-        : `Host settings\nMode: ${modeName}\nCards per player: ${settings.cardsPerPlayer}\nCard pool: ${settings.allowedCards.length ? settings.allowedCards.join(', ') : 'None selected yet'}\nEliminated players: ${settings.allowSpectators ? 'can spectate' : 'cannot spectate'}`;
+    const turnDuration = Number(settings.turnDurationSeconds) || 0;
+    const turnSetting = turnDuration ? `${turnDuration} seconds` : 'No time limit';
+    const modeSettings = settings.mode === 'unoity'
+        ? `Players joining mid-game: ${settings.allowSpectators ? 'can spectate' : 'cannot join'}`
+        : `Cards per player: ${settings.cardsPerPlayer}\nCard pool: ${settings.allowedCards.length ? settings.allowedCards.join(', ') : 'None selected yet'}\nLord Verity: ${settings.allowLordVerity === false ? 'off' : 'on'}\nEliminated players: ${settings.allowSpectators ? 'can spectate' : 'cannot spectate'}`;
+    guestSettings.innerText = `Host settings\nMode: ${modeName}\nTurn duration: ${turnSetting}\n${modeSettings}`;
     guestSettings.hidden = false;
 }
 
@@ -251,6 +289,18 @@ function returnToMenu() {
     const activePeer = peer;
     peer = null;
     conn = null;
+    clearTimeout(turnTimerHandle);
+    clearInterval(turnCountdownInterval);
+    turnTimerHandle = null;
+    turnCountdownInterval = null;
+    turnDeadline = 0;
+    turnTimerPlayerId = null;
+    lastObservedTurnPlayerId = null;
+    clearTimeout(turnNotificationTimeout);
+    turnNotificationTimeout = null;
+    const turnNotification = document.getElementById('turn-notification');
+    turnNotification.hidden = true;
+    turnNotification.dataset.visible = 'false';
     clearTimeout(returnToMenuTimer);
     returnToMenuTimer = null;
     gameFinished = false;
@@ -553,6 +603,23 @@ function showConnectionError(error) {
     document.getElementById('lobby-status').innerText = `Connection error (${type}): ${detail}.${networkHint}`;
 }
 
+function showVersionMismatch(remoteVersion, remotePlayer, closeGuestConnection = false) {
+    versionMismatch = true;
+    const remoteVersionLabel = typeof remoteVersion === 'string' && remoteVersion
+        ? `v${remoteVersion}`
+        : 'an older or unrecognized version';
+    document.getElementById('lobby-status').innerText =
+        `Failed: different game version. Your version is v${GAME_VERSION}; ${remotePlayer} uses ${remoteVersionLabel}. Both players need the same version.`;
+    if (closeGuestConnection && conn?.open) conn.close();
+}
+
+function toggleDebugPanel() {
+    const panel = document.getElementById('debug-menu-panel');
+    const toggle = document.getElementById('debug-toggle-button');
+    panel.hidden = !panel.hidden;
+    toggle.setAttribute('aria-expanded', String(!panel.hidden));
+}
+
 // Change App Screen View
 function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -563,6 +630,7 @@ function showScreen(screenId) {
 function createLobby() {
     isHost = true;
     wasKicked = false;
+    versionMismatch = false;
     gameStarted = false;
     winnerType = '';
     hostConnections.clear();
@@ -628,6 +696,7 @@ function registerHostPeer(attempt = 0) {
 function joinLobby() {
     isHost = false;
     wasKicked = false;
+    versionMismatch = false;
     const targetId = document.getElementById('join-id-input').value.trim().toUpperCase();
     if (!/^[A-Z0-9]{5}$/.test(targetId)) return alert('Enter the 5-character lobby code.');
 
@@ -666,7 +735,7 @@ function setupConnectionHandlers(connection) {
             document.getElementById('lobby-status').innerText = 'A player is requesting to join...';
         } else {
             document.getElementById('lobby-status').innerText = 'Waiting for the lobby owner to approve your request...';
-            connection.send({ type: 'JOIN_REQUEST', name: getPlayerName() });
+            connection.send({ type: 'JOIN_REQUEST', name: getPlayerName(), version: GAME_VERSION });
         }
     });
 
@@ -676,7 +745,7 @@ function setupConnectionHandlers(connection) {
         if (hostSide) {
             if (hostConnections.has(connection)) removeHostPlayer(connection, 'left the game.');
         } else {
-            if (wasKicked) return;
+            if (wasKicked || versionMismatch) return;
             document.getElementById('lobby-status').innerText = 'Connection closed. Check the code and rejoin the lobby.';
         }
     });
@@ -709,13 +778,19 @@ function updateHostLobbyStatus() {
 
 function handleHostMessage(connection, data) {
     if (data.type === 'JOIN_REQUEST') {
+        if (data.version !== GAME_VERSION) {
+            showVersionMismatch(data.version, 'the other player');
+            connection.send({ type: 'JOIN_REJECTED', version: GAME_VERSION });
+            window.setTimeout(() => connection.close(), 100);
+            return;
+        }
         const name = (data.name || 'Player').slice(0, 20);
         if (gameFinished || winnerId) {
-            connection.send({ type: 'JOIN_REJECTED' });
+            connection.send({ type: 'JOIN_REJECTED', version: GAME_VERSION });
             connection.close();
         } else if (gameStarted) {
             if (!gameSettings.allowSpectators) {
-                connection.send({ type: 'JOIN_REJECTED' });
+                connection.send({ type: 'JOIN_REJECTED', version: GAME_VERSION });
                 connection.close();
                 return;
             }
@@ -752,13 +827,22 @@ function handleHostMessage(connection, data) {
 }
 
 function handleGuestMessage(data) {
+    if (versionMismatch) return;
     if (data.type === 'JOIN_ACCEPTED') {
+        if (data.version !== GAME_VERSION) {
+            showVersionMismatch(data.version, 'the lobby owner', true);
+            return;
+        }
         opponentName = data.hostName || 'Lobby owner';
         updateGuestSettings(data.settings);
         document.getElementById('lobby-status').innerText = data.inGame
             ? 'The owner accepted you. Joining as a spectator...'
             : 'The owner accepted you. Waiting for the game to start...';
     } else if (data.type === 'JOIN_REJECTED') {
+        if (data.version !== GAME_VERSION) {
+            showVersionMismatch(data.version, 'the lobby owner', true);
+            return;
+        }
         document.getElementById('lobby-status').innerText = 'The lobby owner declined your request.';
     } else if (data.type === 'KICKED') {
         wasKicked = true;
@@ -794,11 +878,12 @@ function handleGuestMessage(data) {
 }
 
 function acceptHostPlayer(connection, name) {
-    const player = { id: connection.peer, name, hand: [], discardPile: [], connection, isSpectator: false };
+    const player = { id: connection.peer, name, hand: [], discardPile: [], lordVerityCorners: [], connection, isSpectator: false };
     hostConnections.set(connection, player);
     const settings = gameStarted ? gameSettings : getLobbySettings();
     connection.send({
         type: 'JOIN_ACCEPTED',
+        version: GAME_VERSION,
         hostName: getPlayerName(),
         settings,
         inGame: gameStarted,
@@ -816,8 +901,8 @@ function acceptHostPlayer(connection, name) {
     }
 }
 
-function dealHand(settings) {
-    return Array.from({ length: settings.cardsPerPlayer }, () => {
+function dealHand(settings, cardCount = settings.cardsPerPlayer) {
+    return Array.from({ length: cardCount }, () => {
         const allowedCards = settings.allowedCards;
         return allowedCards[Math.floor(Math.random() * allowedCards.length)];
     });
@@ -825,14 +910,16 @@ function dealHand(settings) {
 
 function getPublicGameState() {
     return {
-        players: gamePlayers.map(({ id, name, hand, discardPile: playerDiscardPile, isSpectator }) => ({
+        players: gamePlayers.map(({ id, name, hand, discardPile: playerDiscardPile, lordVerityCorners = [], isSpectator }) => ({
             id,
             name,
             cardCount: hand.length,
             discardCount: playerDiscardPile.length,
+            lordVerityCorners,
             isSpectator
         })),
         currentTurnId: gamePlayers[currentTurnIndex]?.id || 'host',
+        turnDeadline,
         settings: gameSettings,
         unoDiscardPile,
         unoTopCard: unoDiscardPile.at(-1) || null,
@@ -848,10 +935,60 @@ function getPublicGameState() {
     };
 }
 
+function syncTurnTimer() {
+    const turnDurationSeconds = Number(gameSettings.turnDurationSeconds) || 0;
+    if (!isHost || !gameStarted || winnerId || turnDurationSeconds <= 0) {
+        clearTimeout(turnTimerHandle);
+        turnTimerHandle = null;
+        turnDeadline = 0;
+        turnTimerPlayerId = null;
+        return;
+    }
+    if (turnTimerPlayerId === currentTurnPlayerId && turnDeadline > Date.now()) return;
+
+    clearTimeout(turnTimerHandle);
+    turnTimerPlayerId = currentTurnPlayerId;
+    turnDeadline = Date.now() + turnDurationSeconds * 1000;
+    const expectedDeadline = turnDeadline;
+    const expectedPlayerId = currentTurnPlayerId;
+    turnTimerHandle = window.setTimeout(
+        () => expireCurrentTurn(expectedPlayerId, expectedDeadline),
+        turnDurationSeconds * 1000
+    );
+}
+
+function expireCurrentTurn(expectedPlayerId, expectedDeadline) {
+    if (!isHost || !gameStarted || winnerId || currentTurnPlayerId !== expectedPlayerId || turnDeadline !== expectedDeadline) return;
+    const remainingTime = expectedDeadline - Date.now();
+    if (remainingTime > 0) {
+        turnTimerHandle = window.setTimeout(
+            () => expireCurrentTurn(expectedPlayerId, expectedDeadline),
+            remainingTime
+        );
+        return;
+    }
+
+    const timedOutPlayer = gamePlayers.find((player) => player.id === expectedPlayerId);
+    if (!timedOutPlayer || timedOutPlayer.isSpectator) return;
+    turnTimerHandle = null;
+    turnDeadline = 0;
+    turnTimerPlayerId = null;
+    selectedUnoCardId = null;
+    if (gameSettings.mode === 'unoity') {
+        unoDrawnCardId = null;
+        advanceUnoTurn(1);
+    } else {
+        advanceTurnAfter(expectedPlayerId);
+    }
+    gameMessage = `${timedOutPlayer.name}'s turn timed out.`;
+    broadcastGameState();
+}
+
 function broadcastGameState(message = '') {
     if (message) gameMessage = message;
     currentTurnIndex = gamePlayers.length ? currentTurnIndex % gamePlayers.length : 0;
     currentTurnPlayerId = gamePlayers[currentTurnIndex]?.id || 'host';
+    syncTurnTimer();
     const publicState = getPublicGameState();
     const hostPlayer = gamePlayers.find((player) => player.id === 'host');
     if (hostPlayer) {
@@ -882,11 +1019,20 @@ function processGuess(guesserId, targetId, cardName, guessedCount) {
     if (matchingCards.length === count) {
         target.hand = target.hand.filter((card) => card !== cardName);
         guesser.discardPile.push(...matchingCards);
-        if (target.hand.length === 0 && !eliminationOrder.includes(target.id)) {
+        const eliminatedTarget = target.hand.length === 0;
+        if (eliminatedTarget && !eliminationOrder.includes(target.id)) {
             eliminationOrder.push(target.id);
         }
-        gameMessage = `${guesser.name} guessed correctly. ${target.name} lost ${matchingCards.length} ${cardName} card${matchingCards.length === 1 ? '' : 's'}; they went to ${guesser.name}'s discard pile.`;
-        if (hasAllLordVerityCorners(guesser)) {
+        let transferredCorners = [];
+        if (eliminatedTarget && gameSettings.allowLordVerity !== false) {
+            transferredCorners = target.lordVerityCorners || [];
+            guesser.lordVerityCorners.push(...transferredCorners);
+            target.lordVerityCorners = [];
+        }
+        gameMessage = eliminatedTarget && transferredCorners.length
+            ? `${guesser.name} guessed correctly and eliminated ${target.name}, taking ${transferredCorners.length} Lord Verity corner${transferredCorners.length === 1 ? '' : 's'} from their assembly.`
+            : `${guesser.name} guessed correctly. ${target.name} lost ${matchingCards.length} ${cardName} card${matchingCards.length === 1 ? '' : 's'}; they went to ${guesser.name}'s discard pile.`;
+        if (gameSettings.allowLordVerity !== false && hasAllLordVerityCorners(guesser)) {
             finishRoundWithWinner(guesser, `Lord Verity! ${guesser.name} wins!`, 'lord-verity');
             broadcastGameState();
             return;
@@ -940,23 +1086,31 @@ function finishRoundWithWinner(winner, message = gameMessage, type = '') {
 }
 
 function getGuessableCards() {
-    return [...(Array.isArray(gameSettings.allowedCards) ? gameSettings.allowedCards : []), ...LORD_VERITY_CORNERS.map(({ name }) => name)];
+    return Array.isArray(gameSettings.allowedCards) ? gameSettings.allowedCards : [];
 }
 
 function hasAllLordVerityCorners(player) {
-    const ownedCards = new Set([...player.hand, ...player.discardPile]);
-    return LORD_VERITY_CORNERS.every(({ name }) => ownedCards.has(name));
+    const assembledCorners = new Set(player.lordVerityCorners || []);
+    return LORD_VERITY_CORNERS.every(({ name }) => assembledCorners.has(name));
 }
 
 function dealLordVerityCorners(players) {
     if (!players.length) return;
-    const shuffledCorners = [...LORD_VERITY_CORNERS];
-    for (let index = shuffledCorners.length - 1; index > 0; index -= 1) {
-        const swapIndex = Math.floor(Math.random() * (index + 1));
-        [shuffledCorners[index], shuffledCorners[swapIndex]] = [shuffledCorners[swapIndex], shuffledCorners[index]];
+    const shuffledCorners = shuffleCards([...LORD_VERITY_CORNERS]);
+    if (players.length > 1 && Math.random() < LORD_VERITY_TRIPLE_START_CHANCE) {
+        const tripleRecipient = players[Math.floor(Math.random() * players.length)];
+        const remainingPlayers = players.filter((player) => player !== tripleRecipient);
+        const otherRecipient = remainingPlayers[Math.floor(Math.random() * remainingPlayers.length)];
+        shuffledCorners.slice(0, 3).forEach(({ name }) => tripleRecipient.lordVerityCorners.push(name));
+        otherRecipient.lordVerityCorners.push(shuffledCorners[3].name);
+        return;
     }
-    shuffledCorners.forEach(({ name }, index) => {
-        players[index % players.length].hand.push(name);
+
+    shuffledCorners.forEach(({ name }) => {
+        const eligiblePlayers = players.filter((player) => player.lordVerityCorners.length < 2);
+        if (!eligiblePlayers.length) return;
+        const recipient = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)];
+        recipient.lordVerityCorners.push(name);
     });
 }
 
@@ -1107,6 +1261,15 @@ function getUnoCardLabel(card) {
     return card.suit ? `${card.value} (${card.suit})` : card.value;
 }
 
+function getUnoCardArtwork(card) {
+    const characterArtwork = CHARACTER_ARTWORK.get(card.value);
+    if (characterArtwork) return characterArtwork;
+
+    const cardIndex = Number.parseInt(card.id.slice('uno-'.length), 10);
+    const characterIndex = Number.isInteger(cardIndex) ? Math.abs(cardIndex) % CARD_OPTIONS.length : 0;
+    return CHARACTER_ARTWORK.get(CARD_OPTIONS[characterIndex]);
+}
+
 function showNextJoinRequest() {
     const panel = document.getElementById('join-request-panel');
     if (!panel.hidden || currentJoinRequest) return;
@@ -1124,7 +1287,7 @@ function answerJoinRequest(approved) {
     if (approved) {
         acceptHostPlayer(connection, name);
     } else {
-        connection.send({ type: 'JOIN_REJECTED' });
+        connection.send({ type: 'JOIN_REJECTED', version: GAME_VERSION });
         connection.close();
     }
     document.getElementById('join-request-panel').hidden = true;
@@ -1187,20 +1350,36 @@ function removeHostPlayer(connection, message) {
 }
 
 // Host triggers game start using settings UI
-function startGame() {
-    if (!isHost) return;
-    const players = Array.from(hostConnections.entries()).filter(([connection]) => connection.open);
-    if (players.length === 0) {
+function startGame(soloDebug = false) {
+    if (!isHost && !soloDebug) return;
+    const players = soloDebug ? [] : Array.from(hostConnections.entries()).filter(([connection]) => connection.open);
+    if (players.length === 0 && !soloDebug) {
         document.getElementById('lobby-status').innerText = 'Wait for your friend to connect before starting.';
         return;
     }
 
     // Gather custom host settings
-    const { cardsPerPlayer, allowedCards, allowSpectators, mode } = getLobbySettings();
+    const {
+        cardsPerPlayer,
+        allowedCards: selectedCards,
+        allowSpectators,
+        allowLordVerity,
+        turnDurationSeconds: lobbyTurnDuration,
+        mode: lobbyMode
+    } = getLobbySettings();
+    const mode = soloDebug ? document.getElementById('debug-game-mode').value : lobbyMode;
+    const allowedCards = soloDebug && selectedCards.length === 0 ? CARD_OPTIONS : selectedCards;
+    const turnDurationSeconds = soloDebug
+        ? Number(document.getElementById('debug-turn-duration').value)
+        : lobbyTurnDuration;
 
     if (mode !== 'unoity' && allowedCards.length === 0) return alert("Select at least one card type!");
 
-    gameSettings = { cardsPerPlayer, allowedCards, allowSpectators, mode };
+    if (soloDebug) {
+        isHost = true;
+        hostConnections.clear();
+    }
+    gameSettings = { cardsPerPlayer, allowedCards, allowSpectators, allowLordVerity, turnDurationSeconds, mode };
     gameStarted = true;
     winnerId = null;
     winnerType = '';
@@ -1217,14 +1396,34 @@ function startGame() {
     unoDrawPileCount = 0;
     unoDrawnCardId = null;
     selectedUnoCardId = null;
-    gamePlayers = [{ id: 'host', name: getPlayerName(), hand: [], discardPile: [], connection: null, isSpectator: false }];
+    clearTimeout(turnNotificationTimeout);
+    turnNotificationTimeout = null;
+    const turnNotification = document.getElementById('turn-notification');
+    turnNotification.hidden = true;
+    turnNotification.dataset.visible = 'false';
+    gamePlayers = [{ id: 'host', name: getPlayerName(), hand: [], discardPile: [], lordVerityCorners: [], connection: null, isSpectator: false }];
     players.forEach(([connection, player]) => {
         player.id = connection.peer;
         player.connection = connection;
         player.hand = [];
         player.discardPile = [];
+        player.lordVerityCorners = [];
         gamePlayers.push(player);
     });
+    if (soloDebug) {
+        const opponentCount = Number(document.getElementById('debug-opponent-count').value);
+        for (let index = 1; index <= opponentCount; index += 1) {
+            gamePlayers.push({
+                id: `debug-player-${index}`,
+                name: `Test Player ${index}`,
+                hand: [],
+                discardPile: [],
+                lordVerityCorners: [],
+                connection: null,
+                isSpectator: false
+            });
+        }
+    }
     if (mode === 'unoity') {
         unoDeck = createUnoDeck();
         gamePlayers.forEach((player) => {
@@ -1236,14 +1435,24 @@ function startGame() {
         unoDiscardPile.push(startingCard);
         unoCurrentSuit = startingCard.suit;
     } else {
+        if (allowLordVerity) dealLordVerityCorners(gamePlayers);
         gamePlayers.forEach((player) => {
-            player.hand = dealHand(gameSettings);
+            player.hand = dealHand(gameSettings, cardsPerPlayer - player.lordVerityCorners.length);
         });
-        dealLordVerityCorners(gamePlayers);
     }
     currentTurnIndex = 0;
-    broadcastGameState('The round started.');
+    turnDeadline = 0;
+    turnTimerPlayerId = null;
+    lastObservedTurnPlayerId = null;
+    broadcastGameState(soloDebug
+        ? `Solo debug test started with ${gamePlayers.length - 1} simulated opponent${gamePlayers.length === 2 ? '' : 's'}.`
+        : 'The round started.');
     renderHostPlayerList('host-game-players');
+}
+
+function startSoloDebugGame() {
+    if (document.getElementById('debug-menu-panel').hidden) return;
+    startGame(true);
 }
 
 function renderGameState(state) {
@@ -1252,6 +1461,7 @@ function renderGameState(state) {
     if (!isHost) gamePlayers = state.players;
     gamePlayerId = state.youId;
     currentTurnPlayerId = state.currentTurnId;
+    turnDeadline = state.turnDeadline || 0;
     gameMessage = state.message || '';
     winnerId = state.winnerId || null;
     winnerType = state.winnerType || '';
@@ -1300,6 +1510,124 @@ function getPlayerCardCount(player) {
     return Array.isArray(player.hand) ? player.hand.length : player.cardCount || 0;
 }
 
+function createCharacterCard(cardName, className = 'card character-card') {
+    const card = document.createElement('div');
+    card.className = className;
+    card.setAttribute('aria-label', `${cardName} character card`);
+
+    const topRank = document.createElement('span');
+    topRank.className = 'playing-card-rank';
+    topRank.setAttribute('aria-hidden', 'true');
+    topRank.textContent = cardName.charAt(0).toUpperCase();
+
+    const artwork = document.createElement('img');
+    artwork.className = 'character-card-art';
+    artwork.src = CHARACTER_ARTWORK.get(cardName) || '';
+    artwork.alt = `${cardName} character`;
+    artwork.draggable = false;
+
+    const name = document.createElement('span');
+    name.className = 'playing-card-name';
+    name.textContent = cardName;
+
+    const bottomRank = document.createElement('span');
+    bottomRank.className = 'playing-card-rank-bottom';
+    bottomRank.setAttribute('aria-hidden', 'true');
+    bottomRank.textContent = cardName.charAt(0).toUpperCase();
+
+    card.append(topRank, artwork, name, bottomRank);
+    return card;
+}
+
+function showCardCatalog() {
+    const container = document.getElementById('card-catalog');
+    const fragment = document.createDocumentFragment();
+    CARD_OPTIONS.forEach((cardName) => {
+        fragment.appendChild(createCharacterCard(cardName, 'card character-card catalog-card'));
+    });
+    if (gameSettings.allowLordVerity !== false) {
+        LORD_VERITY_CORNERS.forEach(({ name: pieceName, corner }) => {
+            const card = document.createElement('div');
+            card.className = 'card character-card catalog-card';
+            card.setAttribute('aria-label', pieceName);
+
+            const topRank = document.createElement('span');
+            topRank.className = 'playing-card-rank';
+            topRank.setAttribute('aria-hidden', 'true');
+            topRank.textContent = 'LV';
+
+            const artwork = document.createElement('span');
+            artwork.className = 'lord-corner-art catalog-lord-art';
+            artwork.dataset.corner = corner;
+            artwork.setAttribute('aria-hidden', 'true');
+
+            const name = document.createElement('span');
+            name.className = 'playing-card-name';
+            name.textContent = pieceName;
+
+            const bottomRank = document.createElement('span');
+            bottomRank.className = 'playing-card-rank-bottom';
+            bottomRank.setAttribute('aria-hidden', 'true');
+            bottomRank.textContent = 'LV';
+
+            card.append(topRank, artwork, name, bottomRank);
+            fragment.appendChild(card);
+        });
+    }
+    container.replaceChildren(fragment);
+    const dialog = document.getElementById('card-catalog-dialog');
+    dialog.appendChild(document.getElementById('cursor-glow'));
+    dialog.showModal();
+}
+
+function closeCardCatalog() {
+    document.getElementById('card-catalog-dialog').close();
+}
+
+function updateUnoHandLayout() {
+    const handContainer = document.getElementById('my-hand');
+    const cards = handContainer.querySelectorAll('.uno-card');
+    if (!cards.length) {
+        handContainer.style.removeProperty('--uno-overlap');
+        return;
+    }
+    const cardWidth = cards[0].getBoundingClientRect().width;
+    const availableWidth = handContainer.clientWidth - 28;
+    const overlap = Math.min(cardWidth - 38, Math.max(0, cardWidth - availableWidth / cards.length));
+    handContainer.style.setProperty('--uno-overlap', `${overlap}px`);
+}
+
+function updateTurnCountdown() {
+    const timer = document.getElementById('turn-timer');
+    const timerTrack = document.getElementById('turn-timer-track');
+    const timerBar = document.getElementById('turn-timer-bar');
+    const turnDurationSeconds = Number(gameSettings.turnDurationSeconds) || 0;
+    const hasTimer = turnDurationSeconds > 0 && turnDeadline > 0 && !winnerId;
+    timer.hidden = !hasTimer;
+    timerTrack.hidden = !hasTimer;
+    if (hasTimer) {
+        const remainingMilliseconds = Math.max(0, turnDeadline - Date.now());
+        const remainingSeconds = Math.ceil(remainingMilliseconds / 1000);
+        const progress = Math.min(100, remainingMilliseconds / (turnDurationSeconds * 1000) * 100);
+        timer.textContent = `${remainingSeconds} seconds remaining this turn.`;
+        timerTrack.setAttribute('aria-valuenow', String(Math.round(progress)));
+        timerBar.style.width = `${progress}%`;
+        timerBar.style.backgroundColor = `hsl(${Math.round(progress * 1.2)} 75% 42%)`;
+    }
+}
+
+function showTurnNotification() {
+    const notification = document.getElementById('turn-notification');
+    clearTimeout(turnNotificationTimeout);
+    notification.hidden = false;
+    notification.dataset.visible = 'true';
+    turnNotificationTimeout = window.setTimeout(() => {
+        notification.dataset.visible = 'false';
+        notification.hidden = true;
+        turnNotificationTimeout = null;
+    }, 3200);
+}
+
 // Render the hand as information only; guesses are the only game action.
 function renderGame() {
     showScreen('game-screen');
@@ -1317,11 +1645,19 @@ function renderGame() {
     document.getElementById('arena').hidden = isUnoity;
     document.getElementById('guess-controls').hidden = isUnoity;
     document.getElementById('discard-panel').hidden = isUnoity;
+    const lordVerityPanel = document.getElementById('lord-verity-panel');
+    lordVerityPanel.hidden = isUnoity || gameSettings.allowLordVerity === false;
+    renderLordVerityAssembly(localPlayer);
     document.getElementById('my-hand-title').innerText = isUnoity ? `Your Hand (${myHand.length})` : 'Your Hand';
     renderWinnerOverlay();
+    renderOpponentCards();
     const selectedTargetId = document.getElementById('guess-target').value;
     const selectedCardName = document.getElementById('guess-card').value;
     const handContainer = document.getElementById('my-hand');
+    document.querySelector('.game-columns').classList.toggle('unoity-layout', isUnoity);
+    handContainer.classList.toggle('uno-hand', isUnoity);
+    handContainer.classList.toggle('guess-hand', !isUnoity);
+    if (!isUnoity) handContainer.style.removeProperty('--uno-overlap');
     handContainer.innerHTML = '';
 
     if (isUnoity) {
@@ -1345,22 +1681,23 @@ function renderGame() {
                 label.className = 'lord-corner-label';
                 label.textContent = lordCorner.corner.replace('-', ' ');
                 cardEl.append(artwork, label);
-            } else if (cardName === 'Verity') {
-                const character = document.createElement('img');
-                character.className = 'card-verity';
-                character.src = 'assets/download-removebg-preview.png';
-                character.alt = 'Verity, a smiling yellow character';
-                character.draggable = false;
-                cardEl.appendChild(character);
+                handContainer.appendChild(cardEl);
+            } else if (CHARACTER_ARTWORK.has(cardName)) {
+                const characterCard = createCharacterCard(cardName);
+                characterCard.style.animationDelay = `${index * 65}ms`;
+                handContainer.appendChild(characterCard);
             } else {
                 cardEl.innerText = cardName;
+                handContainer.appendChild(cardEl);
             }
-            handContainer.appendChild(cardEl);
         });
     }
 
     const currentPlayer = gamePlayers.find((player) => player.id === currentTurnPlayerId);
     const isMyTurn = gamePlayerId === currentTurnPlayerId;
+    const turnChanged = lastObservedTurnPlayerId !== null && lastObservedTurnPlayerId !== currentTurnPlayerId;
+    lastObservedTurnPlayerId = currentTurnPlayerId;
+    if (turnChanged && isMyTurn && !winnerId) showTurnNotification();
     document.getElementById('turn-status').innerText = winnerId
         ? 'The round is over.'
         : isOut && !isUnoity
@@ -1368,7 +1705,13 @@ function renderGame() {
             : isMyTurn
                 ? isUnoity ? 'Your turn: play a matching card or draw.' : 'Your turn: choose a player, card, and exact count.'
                 : `${currentPlayer?.name || 'Another player'}'s turn.`;
-    document.getElementById('arena-text').innerText = gameMessage || 'Make an exact-count guess to take matching cards.';
+    clearInterval(turnCountdownInterval);
+    turnCountdownInterval = null;
+    updateTurnCountdown();
+    if (!document.getElementById('turn-timer').hidden) {
+        turnCountdownInterval = window.setInterval(updateTurnCountdown, 1000);
+    }
+    document.getElementById('game-event-message').innerText = gameMessage || 'The round started.';
     renderDiscardPile();
 
     const targetSelect = document.getElementById('guess-target');
@@ -1401,10 +1744,78 @@ function renderGame() {
     renderHostPlayerList('host-game-players');
 }
 
+function renderOpponentCards() {
+    const container = document.getElementById('opponent-cards');
+    const opponents = gamePlayers.filter((player) => player.id !== gamePlayerId);
+    const fragment = document.createDocumentFragment();
+    if (!opponents.length) {
+        const waiting = document.createElement('span');
+        waiting.className = 'opponent-card-empty';
+        waiting.textContent = 'Waiting for players';
+        container.replaceChildren(waiting);
+        return;
+    }
+
+    opponents.forEach((player) => {
+        const lordVerityCount = gameSettings.mode !== 'unoity' && gameSettings.allowLordVerity !== false
+            ? (player.lordVerityCorners || []).length
+            : 0;
+        const cardCount = getPlayerCardCount(player) + lordVerityCount;
+        const playerCard = document.createElement('div');
+        playerCard.className = 'opponent-card';
+        playerCard.dataset.currentTurn = String(player.id === currentTurnPlayerId);
+
+        const name = document.createElement('span');
+        name.className = 'opponent-card-name';
+        name.textContent = player.isSpectator ? `${player.name} (spectating)` : player.name;
+        playerCard.appendChild(name);
+
+        if (player.isSpectator) {
+            const spectatorLabel = document.createElement('span');
+            spectatorLabel.className = 'opponent-card-empty';
+            spectatorLabel.textContent = 'Spectating';
+            playerCard.appendChild(spectatorLabel);
+        } else {
+            const backs = document.createElement('div');
+            backs.className = 'opponent-card-backs';
+            backs.setAttribute('aria-hidden', 'true');
+            const visibleCardCount = Math.min(cardCount, 5);
+            for (let index = 0; index < visibleCardCount; index += 1) {
+                const cardBack = document.createElement('span');
+                cardBack.className = 'opponent-card-back';
+                backs.appendChild(cardBack);
+            }
+            if (!cardCount) {
+                const emptyHand = document.createElement('span');
+                emptyHand.className = 'opponent-card-empty';
+                emptyHand.textContent = 'No cards';
+                backs.appendChild(emptyHand);
+            }
+            playerCard.appendChild(backs);
+
+            const count = document.createElement('span');
+            count.className = 'opponent-card-count';
+            count.textContent = `${cardCount} ${cardCount === 1 ? 'card' : 'cards'}`;
+            playerCard.appendChild(count);
+        }
+        fragment.appendChild(playerCard);
+    });
+    container.replaceChildren(fragment);
+}
+
 function renderUnoBoard(isMyTurn) {
     const topCard = unoDiscardPile.at(-1);
     const topCardElement = document.getElementById('uno-top-card');
-    topCardElement.textContent = topCard ? getUnoCardLabel(topCard) : 'No card';
+    topCardElement.replaceChildren();
+    topCardElement.setAttribute('aria-label', topCard ? `Top card: ${getUnoCardLabel(topCard)}` : 'No card');
+    if (topCard) {
+        const artwork = document.createElement('img');
+        artwork.className = 'uno-top-card-art';
+        artwork.src = getUnoCardArtwork(topCard);
+        artwork.alt = '';
+        artwork.draggable = false;
+        topCardElement.appendChild(artwork);
+    }
     topCardElement.dataset.suit = topCard?.suit?.toLowerCase() || 'wild';
     document.getElementById('uno-current-suit').innerText = `Current variety: ${unoCurrentSuit || 'Any'}`;
     document.getElementById('uno-direction').innerText = `Turn direction: ${unoDirection > 0 ? 'Clockwise' : 'Counterclockwise'}`;
@@ -1419,6 +1830,30 @@ function renderUnoBoard(isMyTurn) {
     document.getElementById('uno-pass-button').hidden = !isMyTurn || !unoDrawnCardId;
 }
 
+function renderLordVerityAssembly(player) {
+    const container = document.getElementById('lord-verity-assembly');
+    const collectedCorners = new Set(player?.lordVerityCorners || []);
+    const fragment = document.createDocumentFragment();
+    LORD_VERITY_CORNERS.forEach(({ name, corner }) => {
+        const slot = document.createElement('div');
+        slot.className = 'lord-verity-slot';
+        slot.dataset.collected = String(collectedCorners.has(name));
+        slot.setAttribute('aria-label', `${name}: ${collectedCorners.has(name) ? 'collected' : 'not collected'}`);
+        if (collectedCorners.has(name)) {
+            const artwork = document.createElement('span');
+            artwork.className = 'lord-corner-art';
+            artwork.dataset.corner = corner;
+            artwork.setAttribute('aria-hidden', 'true');
+            slot.appendChild(artwork);
+        } else {
+            slot.textContent = corner.replace('-', ' ');
+        }
+        fragment.appendChild(slot);
+    });
+    container.replaceChildren(fragment);
+    document.getElementById('lord-verity-progress').textContent = `${collectedCorners.size} of ${LORD_VERITY_CORNERS.length} corners collected`;
+}
+
 function renderUnoHand(isMyTurn) {
     const handContainer = document.getElementById('my-hand');
     if (!myHand.some((card) => card.id === selectedUnoCardId)) selectedUnoCardId = null;
@@ -1428,7 +1863,12 @@ function renderUnoHand(isMyTurn) {
         cardButton.className = 'card uno-card';
         cardButton.dataset.suit = card.suit?.toLowerCase() || 'wild';
         cardButton.style.animationDelay = `${index * 45}ms`;
-        cardButton.textContent = getUnoCardLabel(card);
+        const artwork = document.createElement('img');
+        artwork.className = 'uno-card-character';
+        artwork.src = getUnoCardArtwork(card);
+        artwork.alt = '';
+        artwork.draggable = false;
+        cardButton.appendChild(artwork);
         const isPlayable = canPlayUnoCard(card, myHand);
         cardButton.setAttribute('aria-label', `${getUnoCardLabel(card)}${isPlayable ? ', playable' : ', not playable'}`);
         cardButton.disabled = !isMyTurn || winnerId !== null || !isPlayable || (unoDrawnCardId && card.id !== unoDrawnCardId);
@@ -1443,6 +1883,7 @@ function renderUnoHand(isMyTurn) {
         });
         handContainer.appendChild(cardButton);
     });
+    updateUnoHandLayout();
 }
 
 function sendUnoPlay(card, suit = document.getElementById('uno-wild-suit').value) {
@@ -1588,9 +2029,13 @@ document.addEventListener('pointermove', (event) => {
 });
 
 document.getElementById('settings-dialog').addEventListener('close', () => {
-    document.body.appendChild(document.getElementById('cursor-glow'));
+    restoreCursorToOpenDialog();
     showSettingsPanel('settings-main-panel');
 });
 
+document.getElementById('card-catalog-dialog').addEventListener('close', restoreCursorToOpenDialog);
+
+window.addEventListener('resize', updateUnoHandLayout);
 document.addEventListener('pointerdown', createClickParticles);
+document.getElementById('game-version').textContent = `Version: ${GAME_VERSION}`;
 initializeSettings();

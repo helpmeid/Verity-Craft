@@ -233,6 +233,8 @@
             animation: character-float 5s ease-in-out infinite alternate;
         }
         .screen { position: relative; z-index: 1; display: none; width: 100%; max-width: 500px; text-align: center; }
+        #game-screen { max-width: none; }
+        #game-screen.active { align-self: stretch; margin-left: 0; }
         .active { display: block; }
 
         button, input, select {
@@ -268,6 +270,11 @@
         .player-name-field { text-align: left; margin: 18px 0; }
         .player-name-field input { margin-top: 6px; }
         .coin-balance { margin: 0 0 18px; padding: 10px 14px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
+        .debug-menu-panel { position: fixed; right: 12px; bottom: 68px; z-index: 20; width: min(320px, calc(100vw - 32px)); max-height: min(70vh, 560px); overflow-y: auto; padding: 12px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.3); text-align: left; }
+        .debug-menu-panel[hidden] { display: none; }
+        .debug-menu-panel h3 { margin: 0 0 8px; text-align: center; }
+        .debug-toggle-button { position: fixed; right: 12px; bottom: 12px; z-index: 20; width: auto; margin: 0; padding: 8px 14px; }
+        .game-version { position: fixed; left: 12px; bottom: 12px; z-index: 20; padding: 8px 10px; color: var(--text-color); background: var(--surface); border: 1px solid var(--border-color); border-radius: 8px; font-size: 12px; }
         .card-checkbox { display: flex; align-items: center; gap: 10px; margin: 0; padding: 8px; text-align: left; }
         .card-checkbox input, .settings-toggle input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
         .card-checkbox label { flex: 1; }
@@ -283,22 +290,62 @@
         .host-player-list h3, .host-player-list p { margin: 0; }
         .host-player-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .host-player-row button { width: auto; margin: 0; padding: 8px 12px; }
-        #game-board { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 800px; }
-        .game-columns { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 16px; align-items: start; }
+        .opponent-area { display: grid; gap: 8px; padding: 10px 12px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
+        .opponent-area h3 { margin: 0; }
+        .opponent-cards { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center; gap: 10px; }
+        .opponent-card { display: grid; min-width: 100px; justify-items: center; gap: 5px; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border-color); border-radius: 8px; }
+        .opponent-card[data-current-turn="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+        .opponent-card-name { max-width: 160px; overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+        .opponent-card-count { font-size: 13px; }
+        .opponent-card-backs { display: flex; justify-content: center; min-height: 36px; padding: 0 8px; }
+        .opponent-card-back { width: 24px; height: 34px; margin-left: -8px; border: 2px solid #fff; border-radius: 5px; background: repeating-linear-gradient(45deg, #173b60 0 4px, #245b8d 4px 8px); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+        .opponent-card-back:first-child { margin-left: 0; }
+        .opponent-card-empty { display: grid; min-width: 60px; min-height: 34px; place-items: center; color: var(--text-color); border: 1px dashed var(--border-color); border-radius: 5px; font-size: 11px; }
+        #game-board { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: none; }
+        .game-info-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; text-align: left; }
+        .game-info-panel { min-width: 0; margin: 0; padding: 10px 12px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
+        .game-info-panel h3 { margin: 0 0 6px; font-size: 1rem; }
+        #game-player-names, #game-event-message { margin: 0; overflow-wrap: anywhere; }
+        #game-event-message { min-height: 1.4em; }
+        @media (max-width: 600px) {
+            .game-info-row { grid-template-columns: 1fr; }
+        }
+        .game-columns { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(220px, 260px); gap: 16px; align-items: start; }
+        .game-columns.unoity-layout { grid-template-columns: minmax(140px, 220px) minmax(0, 1fr) minmax(220px, 300px); }
+        .game-columns.unoity-layout .game-player-rail { display: contents; }
+        .game-columns.unoity-layout .opponent-area { grid-column: 1; grid-row: 1; }
+        .game-columns.unoity-layout .player-hand-panel { grid-column: 3; grid-row: 1; min-width: 0; box-sizing: border-box; padding: 10px 12px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
+        .game-columns.unoity-layout .game-main { display: contents; }
+        .game-columns.unoity-layout #uno-table { grid-column: 2; grid-row: 1; }
+        .game-columns.unoity-layout #arena[hidden] { display: contents; }
+        .game-columns.unoity-layout .game-sidebar { display: none; }
+        .game-player-rail { display: grid; gap: 12px; min-width: 0; }
         .game-main { min-width: 0; }
+        .game-sidebar { display: grid; gap: 12px; min-width: 0; }
+        .game-sidebar > .lord-verity-panel { margin: 0; }
+        .game-sidebar > .discard-panel { min-width: 0; }
         .discard-panel { padding: 12px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; text-align: left; }
         .discard-panel h3 { margin-top: 0; }
-        #discard-pile { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+        #discard-pile { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
         .discarded-card { padding: 6px 8px; background: var(--surface); border: 1px solid var(--border-color); border-radius: 6px; overflow-wrap: anywhere; }
+        .lord-verity-panel { display: grid; justify-items: center; gap: 10px; margin: 16px 0; padding: 14px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
+        .lord-verity-panel[hidden] { display: none; }
+        .lord-verity-panel h3, .lord-verity-panel p { margin: 0; text-align: center; }
+        .lord-verity-assembly { display: grid; grid-template-columns: repeat(2, 76px); grid-template-rows: repeat(2, 76px); gap: 6px; }
+        .lord-verity-slot { display: grid; place-items: center; width: 76px; height: 76px; overflow: hidden; color: var(--text-color); background: var(--surface); border: 2px dashed var(--border-color); border-radius: 8px; font-size: 10px; text-align: center; text-transform: capitalize; }
+        .lord-verity-slot[data-collected="true"] { border-style: solid; border-color: var(--accent); }
+        .lord-verity-slot .lord-corner-art { width: 100%; height: 100%; }
         .uno-table { display: grid; justify-items: center; gap: 10px; padding: 16px; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 8px; }
         .uno-table[hidden] { display: none; }
-        .uno-top-card { display: grid; width: min(220px, 70vw); min-height: 120px; padding: 18px; place-items: center; color: #172019; background: #e5ece8; border: 5px solid #fff; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,.2); font-size: 1.3rem; font-weight: 800; text-align: center; overflow-wrap: anywhere; }
+        .uno-top-card { display: grid; width: min(150px, 70vw); height: 210px; padding: 8px; place-items: center; color: #172019; background: #e5ece8; border: 5px solid #fff; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+        .uno-top-card-art { display: block; width: 100%; height: 100%; object-fit: contain; background: #fff; border-radius: 7px; }
         .uno-top-card[data-suit="green"] { background: #65bd76; }
         .uno-top-card[data-suit="blue"] { background: #67a9e8; }
         .uno-top-card[data-suit="red"] { background: #ef6a65; }
         .uno-top-card[data-suit="yellow"] { background: #f2d85f; }
         .uno-top-card[data-suit="wild"] { background: linear-gradient(135deg, #ef6a65 0 25%, #f2d85f 25% 50%, #65bd76 50% 75%, #67a9e8 75%); }
-        .uno-card { width: 118px; min-height: 154px; padding: 10px; color: #172019; border: 5px solid #fff; border-radius: 14px; font-size: 14px; text-align: center; overflow-wrap: anywhere; }
+        .game-columns.unoity-layout .uno-top-card { width: min(150px, 100%); box-sizing: border-box; }
+        .uno-card { position: relative; display: grid; flex: 0 0 118px; grid-template-rows: minmax(0, 1fr); align-items: center; justify-items: center; width: 118px; min-height: 158px; padding: 6px; color: #172019; border: 5px solid #fff; border-radius: 14px; }
         .uno-card[data-suit="green"] { background: #65bd76; }
         .uno-card[data-suit="blue"] { background: #67a9e8; }
         .uno-card[data-suit="red"] { background: #ef6a65; }
@@ -306,6 +353,10 @@
         .uno-card[data-suit="wild"] { background: linear-gradient(135deg, #ef6a65 0 25%, #f2d85f 25% 50%, #65bd76 50% 75%, #67a9e8 75%); }
         .uno-card.selected { outline: 4px solid var(--accent); outline-offset: 3px; }
         .uno-card:disabled { opacity: .48; }
+        .uno-card-character { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; background: #fff; border-radius: 7px; }
+        .uno-hand { justify-content: flex-start; flex-wrap: nowrap; gap: 0; min-height: 202px; padding: 24px 14px 30px; overflow-x: auto; overflow-y: hidden; }
+        .uno-hand .uno-card + .uno-card { margin-left: calc(-1 * var(--uno-overlap, 0px)); }
+        .uno-hand .uno-card:hover, .uno-hand .uno-card:focus-visible { z-index: 5; transform: translateY(-12px) scale(1.12); opacity: 1; box-shadow: 0 12px 24px rgba(0,0,0,.4); }
         .uno-wild-controls { display: flex; flex-wrap: wrap; align-items: end; justify-content: center; gap: 10px; }
         .uno-wild-controls[hidden] { display: none; }
         .uno-wild-controls select, .uno-wild-controls button { width: auto; margin: 0; }
@@ -315,7 +366,17 @@
         .winner-banner { width: min(460px, 100%); padding: 28px; color: var(--text-color); background: var(--surface); border: 2px solid var(--accent); border-radius: 8px; text-align: center; animation: winner-pop 650ms cubic-bezier(.2,.8,.25,1) both; }
         .winner-banner img { width: 100px; height: 100px; object-fit: contain; }
         .winner-banner h2 { margin: 10px 0; }
-        .hand { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+        .hand { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+        .guess-hand { justify-content: safe center; flex-wrap: nowrap; gap: 10px; min-height: 190px; margin: 0; padding: 14px 8px 18px; overflow-x: auto; overflow-y: hidden; }
+        .guess-hand .card { flex: 0 0 114px; }
+        .guess-hand .card:hover, .guess-hand .card:focus-visible { z-index: 5; transform: translateY(-8px) scale(1.05); }
+        .player-hand-panel { width: 100%; min-width: 0; box-sizing: border-box; }
+        .player-hand-panel .hand-heading { margin-top: 0; }
+        #arena { display: flex; min-height: 220px; align-items: stretch; justify-content: stretch; padding: 12px; border: 2px dashed var(--border-color); border-radius: 8px; }
+        #arena-text { display: none; }
+        .hand-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+        .hand-heading h3 { margin: 0; }
+        .hand-heading button { width: auto; margin: 0; }
         .card {
             width: 100px;
             height: 140px;
@@ -331,6 +392,20 @@
             transition: transform 0.2s;
             animation: card-deal 420ms ease-out both;
         }
+        .character-card { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; justify-items: stretch; gap: 0; width: 114px; height: 166px; padding: 23px 6px 6px; color: #24211d; background: #fff; border: 3px solid #292722; border-radius: 11px; box-shadow: 0 4px 8px rgba(0,0,0,.2); }
+        .character-card-art { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; background: #fff; }
+        .playing-card-rank, .playing-card-rank-bottom { position: absolute; z-index: 1; color: #a42c32; font-family: Georgia, serif; font-size: 15px; font-weight: 800; line-height: 1; }
+        .playing-card-rank { top: 5px; left: 7px; }
+        .playing-card-rank-bottom { right: 7px; bottom: 30px; transform: rotate(180deg); }
+        .playing-card-name { display: block; padding-top: 4px; border-top: 1px solid #d6d1c5; font-family: Georgia, 'Times New Roman', serif; font-size: 12px; font-weight: 800; line-height: 1.1; text-align: center; }
+        .card-catalog-dialog { width: min(920px, calc(100% - 24px)); max-height: calc(100dvh - 32px); overflow: hidden; }
+        .card-catalog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .card-catalog-heading h2 { margin: 0; }
+        .card-catalog-heading button { width: auto; margin: 0; }
+        .card-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; max-height: min(65dvh, 620px); overflow: auto; padding: 8px 4px; }
+        .catalog-card { width: 100%; height: auto; aspect-ratio: 5 / 7; padding-top: 21px; animation: none; cursor: default; }
+        .catalog-card .playing-card-name { font-size: 11px; }
+        .catalog-lord-art { width: 100%; height: 100%; background-size: 200% 200%; }
         .lord-verity-piece { flex-direction: column; gap: 5px; }
         .lord-corner-art { display: block; width: 76px; height: 76px; background-image: url("assets/download-removebg-preview.png"); background-repeat: no-repeat; background-size: 200% 200%; }
         .lord-corner-art[data-corner="top-left"] { background-position: 0 0; }
@@ -350,19 +425,26 @@
         .click-particle[data-shape="square"], .particle-preview-dot[data-shape="square"] { border-radius: 1px; }
         .click-particle[data-shape="diamond"], .particle-preview-dot[data-shape="diamond"] { border-radius: 0; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
         .click-particle[data-shape="star"], .particle-preview-dot[data-shape="star"] { border-radius: 0; clip-path: polygon(50% 0, 62% 35%, 100% 38%, 70% 60%, 80% 100%, 50% 76%, 20% 100%, 30% 60%, 0 38%, 38% 35%); }
-        .cursor-glow { position: fixed; z-index: 10001; top: 0; left: 0; width: var(--cursor-size, 18px); height: var(--cursor-size, 18px); border: 2px solid var(--cursor-color, var(--accent)); border-radius: 50%; box-shadow: 0 0 10px var(--cursor-color, var(--accent)); opacity: 0; pointer-events: none; transform: translate3d(-100px, -100px, 0); }
+        .cursor-glow { position: fixed; z-index: 2147483647; top: 0; left: 0; width: var(--cursor-size, 18px); height: var(--cursor-size, 18px); border: 2px solid var(--cursor-color, var(--accent)); border-radius: 50%; box-shadow: 0 0 10px var(--cursor-color, var(--accent)); opacity: 0; pointer-events: none; transform: translate3d(-100px, -100px, 0); }
         .cursor-glow[data-shape="dot"] { background: var(--cursor-color, var(--accent)); border: 0; box-shadow: 0 0 8px var(--cursor-color, var(--accent)); }
         .cursor-glow[data-shape="square"] { border-radius: 3px; }
         .cursor-glow[data-shape="diamond"] { border-radius: 0; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
         .cursor-glow[data-shape="star"] { border-radius: 0; clip-path: polygon(50% 0, 62% 35%, 100% 38%, 70% 60%, 80% 100%, 50% 76%, 20% 100%, 30% 60%, 0 38%, 38% 35%); }
         .effect-preview-stage { position: relative; display: grid; min-height: 116px; margin: 10px 0 16px; place-items: center; overflow: hidden; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface-muted); }
-        .effect-cursor-preview { position: relative; top: auto; left: auto; opacity: 1; transform: none !important; }
+        .effect-cursor-preview { position: relative; z-index: auto; top: auto; left: auto; opacity: 1; transform: none !important; }
         .particle-preview-dot { position: absolute; left: 50%; top: 50%; }
         .settings-panel[hidden] { display: none; }
         .settings-panel { max-height: min(680px, calc(100dvh - 80px)); overflow-y: auto; }
         .settings-panel input[type="range"] { accent-color: var(--accent); padding: 0; }
         body, body * { cursor: none !important; }
         .status-box { background: var(--surface-muted); padding: 10px; border-radius: 8px; font-weight: bold; }
+        #turn-timer { margin: -6px 0 0; font-size: .9em; }
+        .turn-timer-track { width: 100%; height: 12px; overflow: hidden; background: var(--surface-muted); border: 1px solid var(--border-color); border-radius: 999px; }
+        .turn-timer-track[hidden] { display: none; }
+        .turn-timer-bar { width: 100%; height: 100%; background: hsl(120 75% 42%); transition: width 250ms linear, background-color 250ms linear; }
+        .turn-notification { position: fixed; top: 50%; left: 50%; z-index: 9980; width: min(620px, calc(100vw - 32px)); padding: clamp(24px, 6vw, 48px); transform: translate(-50%, -50%) scale(.8); opacity: 0; color: var(--accent-text, #fff); background: var(--accent); border: 4px solid var(--surface); border-radius: 18px; box-shadow: 0 18px 70px rgba(0,0,0,.55); font-size: clamp(2.4rem, 8vw, 5rem); font-weight: 900; line-height: 1; text-align: center; pointer-events: none; transition: transform 180ms ease-out, opacity 180ms ease-out; }
+        .turn-notification[data-visible="true"] { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        .turn-notification[hidden] { display: none; }
         #display-lobby-id { overflow-wrap: anywhere; background: var(--surface); padding: 10px; border-radius: 8px; }
         dialog { width: min(420px, calc(100% - 40px)); max-height: calc(100vh - 40px); overflow: visible; color: var(--text-color); background: var(--surface); border: 1px solid var(--border-color); border-radius: 8px; padding: 22px; }
         dialog::backdrop { background: rgba(10, 20, 15, 0.62); }
@@ -397,19 +479,38 @@
         @keyframes winner-pop { 0% { transform: scale(.65) translateY(18px); } 70% { transform: scale(1.05); } 100% { transform: scale(1); } }
         @media (prefers-reduced-motion: reduce) {
             body::before, body[data-palette="verity-secret"]::after, .verity-mascot, .card, .click-particle, .winner-overlay, .winner-banner { animation: none; }
+            .turn-notification { transition: none; }
         }
         @media (max-width: 420px) {
             body { padding: 68px 14px 14px; }
             .game-columns { grid-template-columns: 1fr; }
+            .game-columns.unoity-layout { grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) minmax(0, .8fr); gap: 6px; }
+            .game-columns.unoity-layout .opponent-area { grid-column: 1; }
+            .game-columns.unoity-layout .game-main { grid-column: 2; }
+            .game-columns.unoity-layout .player-hand-panel { grid-column: 3; }
             #discard-pile { max-height: 180px; }
             .card-options { grid-template-columns: 1fr; }
             .card { width: 82px; height: 118px; }
+            .uno-card { flex-basis: 104px; width: 104px; min-height: 146px; }
+            .uno-hand { min-height: 186px; }
+            .character-card { width: 92px; height: 132px; padding-top: 20px; }
+            .playing-card-name { font-size: 10px; }
+            .card-catalog { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+        }
+        @media (min-width: 421px) and (max-width: 760px) {
+            .game-columns { grid-template-columns: 1fr; gap: 10px; }
+            .game-columns.unoity-layout { grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) minmax(0, .8fr); gap: 8px; }
+            .game-columns.unoity-layout .opponent-area { grid-column: 1; }
+            .game-columns.unoity-layout .game-main { grid-column: 2; }
+            .game-columns.unoity-layout .player-hand-panel { grid-column: 3; }
+            .lord-verity-panel, .discard-panel { padding: 10px; }
         }
     </style>
 </head>
 <body>
 
     <span id="cursor-glow" class="cursor-glow" aria-hidden="true"></span>
+    <div id="game-version" class="game-version" aria-label="Game version"></div>
     <div id="host-code-bar" class="host-code-bar" hidden>
         <span>Lobby code: <strong id="host-lobby-code"></strong></span>
         <button class="secondary-button" type="button" onclick="copyLobbyCode()">Copy</button>
@@ -429,6 +530,29 @@
         </label>
         <p class="coin-balance" aria-live="polite">Coins: <strong id="coin-balance">0</strong></p>
         <button onclick="createLobby()">Create Host Lobby</button>
+        <section id="debug-menu-panel" class="debug-menu-panel" aria-labelledby="debug-menu-title" hidden>
+            <h3 id="debug-menu-title">Debug settings</h3>
+            <label for="debug-game-mode">Test game mode:</label>
+            <select id="debug-game-mode">
+                <option value="guess-variety">Guess the Variety</option>
+                <option value="unoity">Unoity</option>
+            </select>
+            <label for="debug-opponent-count">Test opponents:</label>
+            <select id="debug-opponent-count">
+                <option value="1">1 opponent</option>
+                <option value="2" selected>2 opponents</option>
+                <option value="3">3 opponents</option>
+            </select>
+            <label for="debug-turn-duration">Test turn duration:</label>
+            <select id="debug-turn-duration">
+                <option value="5">5 seconds</option>
+                <option value="10" selected>10 seconds</option>
+                <option value="15">15 seconds</option>
+                <option value="30">30 seconds</option>
+            </select>
+            <button type="button" onclick="startSoloDebugGame()">Start solo test game</button>
+        </section>
+        <button id="debug-toggle-button" class="secondary-button debug-toggle-button" type="button" aria-controls="debug-menu-panel" aria-expanded="false" onclick="toggleDebugPanel()">Debug</button>
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ccc;">
         <input type="text" id="join-id-input" maxlength="5" autocapitalize="characters" autocomplete="off" placeholder="Enter 5-character lobby code" oninput="formatLobbyCode(this)">
         <button onclick="joinLobby()">Join Lobby</button>
@@ -554,7 +678,19 @@
                 <input id="allow-spectators" type="checkbox" checked onchange="sendLobbySettings()">
                 <span>Allow eliminated players to spectate</span>
             </label>
+            <label for="turn-duration">Turn duration:</label>
+            <label class="settings-toggle" for="turn-duration-unlimited">
+                <input id="turn-duration-unlimited" type="checkbox" onchange="updateTurnDurationControl(); sendLobbySettings()">
+                <span>No time limit</span>
+            </label>
+            <label for="turn-duration">Time: <output id="turn-duration-value">1:30</output></label>
+            <input id="turn-duration" type="range" min="30" max="180" step="15" value="90" oninput="updateTurnDurationControl()" onchange="sendLobbySettings()">
+            <p>When time runs out, the turn is skipped automatically.</p>
             <div id="guess-mode-settings">
+                <label class="match-toggle" for="allow-lord-verity">
+                    <input id="allow-lord-verity" type="checkbox" checked onchange="sendLobbySettings()">
+                    <span>Include Lord Verity corner cards</span>
+                </label>
                 <label for="card-count">Cards per player:</label>
                 <select id="card-count" onchange="sendLobbySettings()">
                     <option value="3">3 Cards</option>
@@ -577,18 +713,39 @@
     <div id="game-screen" class="screen">
         <button class="secondary-button screen-back" type="button" onclick="returnToMenu()">Back to menu</button>
         <div id="game-board">
-            <p id="game-player-names"></p>
+            <div class="game-info-row">
+                <section class="game-info-panel" aria-labelledby="game-players-title">
+                    <h3 id="game-players-title">Players</h3>
+                    <p id="game-player-names"></p>
+                </section>
+                <section class="game-info-panel" aria-labelledby="game-event-title">
+                    <h3 id="game-event-title">Last event</h3>
+                    <p id="game-event-message" aria-live="polite">The round has not started yet.</p>
+                </section>
+            </div>
             <div id="host-game-players" class="host-player-list" hidden aria-label="Players in this game"></div>
             <div class="status-box" id="turn-status">Game Started!</div>
+            <p id="turn-timer" hidden></p>
+            <div id="turn-timer-track" class="turn-timer-track" role="progressbar" aria-label="Time remaining in this turn" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" hidden>
+                <div id="turn-timer-bar" class="turn-timer-bar"></div>
+            </div>
             <div id="out-panel" class="out-panel" hidden>
                 <h2>You're out</h2>
                 <p id="out-message"></p>
                 <button id="leave-after-out-button" type="button" onclick="returnToMenu()">Leave game</button>
             </div>
             <div id="game-play-area">
+            <div class="game-columns">
+                <aside class="game-player-rail" aria-label="Player cards">
+                    <section class="opponent-area" aria-labelledby="opponent-area-title">
+                        <h3 id="opponent-area-title">Other players</h3>
+                        <div id="opponent-cards" class="opponent-cards"></div>
+                    </section>
+                </aside>
+                <div class="game-main">
             <section id="uno-table" class="uno-table" hidden aria-label="Unoity table">
                 <h2>Unoity</h2>
-                <div id="uno-top-card" class="uno-top-card" data-suit="wild">Waiting for the first card</div>
+                <div id="uno-top-card" class="uno-top-card" data-suit="wild" aria-label="Waiting for the first card"></div>
                 <p id="uno-current-suit"></p>
                 <p id="uno-direction"></p>
                 <p id="uno-draw-pile-count"></p>
@@ -605,10 +762,15 @@
                 <button id="uno-draw-button" type="button" onclick="drawUnoTurn()">Draw a card</button>
                 <button id="uno-pass-button" class="secondary-button" type="button" onclick="passUnoTurnFromUI()" hidden>Pass turn</button>
             </section>
-            <div class="game-columns">
-                <div class="game-main">
-            <div id="arena" style="height: 110px; display: flex; justify-content: center; align-items: center; border: 2px dashed var(--border-color); border-radius: 8px; padding: 8px;">
-                <p id="arena-text">Played cards will appear here</p>
+            <div id="arena">
+                <div class="player-hand-panel">
+                    <div class="hand-heading">
+                        <h3 id="my-hand-title">Your Hand</h3>
+                        <button class="secondary-button" type="button" onclick="showCardCatalog()">View all cards</button>
+                    </div>
+                    <div id="my-hand" class="hand"></div>
+                </div>
+                <p id="arena-text" hidden>Played cards will appear here</p>
             </div>
             <div id="guess-controls" class="guess-controls" hidden>
                 <label for="guess-target">Choose a player</label>
@@ -619,23 +781,39 @@
                 <input id="guess-count" type="number" min="1" max="0" step="1" inputmode="numeric" placeholder="Type a number" disabled>
                 <button id="submit-guess-button" type="button" onclick="submitGuess()">Make Guess</button>
             </div>
-            <h3 id="my-hand-title">Your Hand</h3>
-            <div id="my-hand" class="hand"></div>
                 </div>
-                <aside id="discard-panel" class="discard-panel" aria-labelledby="discard-title">
+                <aside class="game-sidebar" aria-label="Player collections">
+                    <section id="lord-verity-panel" class="lord-verity-panel" aria-labelledby="lord-verity-title" hidden>
+                        <h3 id="lord-verity-title">Lord Verity assembly</h3>
+                        <div id="lord-verity-assembly" class="lord-verity-assembly" aria-label="Collected Lord Verity corners"></div>
+                        <p id="lord-verity-progress"></p>
+                    </section>
+                <section id="discard-panel" class="discard-panel" aria-labelledby="discard-title">
                     <h3 id="discard-title">Your discard pile <span id="discard-count">0</span></h3>
                     <div id="discard-pile" aria-live="polite"></div>
+                </section>
                 </aside>
             </div>
             </div>
         </div>
     </div>
+    <dialog id="card-catalog-dialog" class="card-catalog-dialog" aria-labelledby="card-catalog-title">
+        <div class="card-catalog-heading">
+            <h2 id="card-catalog-title">Game card reference</h2>
+            <button class="secondary-button" type="button" onclick="closeCardCatalog()">Close</button>
+        </div>
+        <p>Browse the character cards and Lord Verity pieces used in the game.</p>
+        <div id="card-catalog" class="card-catalog"></div>
+    </dialog>
     <div id="winner-overlay" class="winner-overlay" hidden aria-live="assertive">
         <div class="winner-banner">
             <img src="assets/download-removebg-preview.png" alt="Lord Verity assembled from four corner cards">
             <h2 id="winner-title">Winner!</h2>
             <p id="winner-message"></p>
         </div>
+    </div>
+    <div id="turn-notification" class="turn-notification" role="status" aria-live="assertive" aria-atomic="true" hidden>
+        It's your turn!
     </div>
 
     <!-- Link the game multiplayer logic file -->
